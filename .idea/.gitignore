@@ -1,3 +1,9 @@
 # Default ignored files
 /shelf/
 /workspace.xml
+# Ignore PyCharm IDE settings
+.idea/
+
+# Ignore Python bytecode cache
+__pycache__/
+*.pyc
