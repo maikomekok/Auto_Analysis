@@ -112,9 +112,10 @@ def Autoanalysis(input_path):
     files = [f for f in os.listdir(input_path) if isfile(os.path.join(input_path, f))]
 
     # Run delta_raw_data, summarize_join_exchanges, and single_file_summary
-    delta_raw_data(input_path)  # Assuming this is defined somewhere
-    date_str = summarize_join_exchanges(input_path)  # Assuming this is defined somewhere
-    results, date_str = single_file_summary(input_path)  # Assuming this is defined somewhere
+
+    delta_raw_data(input_path)
+    date_str = summarize_join_exchanges(input_path)
+    results, date_str = single_file_summary(input_path)
 
     # Replace '-' with '_' in date_str for consistency in file names
     date_str = date_str.replace('-', '_')
@@ -149,7 +150,7 @@ def Autoanalysis(input_path):
         try:
             composite_file_path = os.path.join(composite_dir, 'summary_composite.csv')
             print(f"Saving composite summary to {composite_file_path}")
-            df_composite = pd.DataFrame(results['composite'])  # Assuming results['composite'] contains composite summary
+            df_composite = pd.DataFrame(results['composite'])
             df_composite.to_csv(composite_file_path, index=False)
             print(f"Composite summary saved successfully.")
         except Exception as e:
