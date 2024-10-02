@@ -1,6 +1,8 @@
 import pandas as pd
 import os
 from statistics import median
+from scipy.stats import zscore
+
 
 
 def check_outliers(column_data, csv_file, col_name):
@@ -55,3 +57,9 @@ def run_quality_checks(directory_path):
             print(f"Data quality check failed for {csv_file}.")
         else:
             print(f"Data quality check passed for {csv_file}.")
+
+def check_z_score_outliers(column_data,csv_file,col_name,threshold = 3):
+    z_scores = zscore(column_data)
+    outliers = (abs(z_scores)>threshold)
+    if outliers.any():
+        print(f"Outliers detected in column {col_name} of csv file {csv_file}")
