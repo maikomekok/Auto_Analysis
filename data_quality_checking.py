@@ -58,8 +58,23 @@ def run_quality_checks(directory_path):
         else:
             print(f"Data quality check passed for {csv_file}.")
 
-def check_z_score_outliers(column_data,csv_file,col_name,threshold = 3):
+def check_z_score_outliers(column_data,csv_file,col_name,threshold = 3): #default threshold is 3 for the experiment
     z_scores = zscore(column_data)
-    outliers = (abs(z_scores)>threshold)
+    outliers = (abs(z_scores) > threshold)
     if outliers.any():
         print(f"Outliers detected in column {col_name} of csv file {csv_file}")
+        return False
+    return True
+
+def time_outliers(data,csv_file,timestamp_col = "date"):
+    data = data.sort_values(by=timestamp_col)
+    timediff = data[timestamp_col].diff().dt.total_seconds().dropna()
+
+    if not check_outliers(timediff, csv_file, 'time_since_last_update'):
+        return False
+
+    if not check_z_score_outliers(timediff, csv_file, 'time_since_last_update'):
+        return False
+
+    return True
+
