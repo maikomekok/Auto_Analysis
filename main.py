@@ -2,15 +2,15 @@ import os
 import sys
 import getopt
 from autoanalysis import Autoanalysis, autoanalysis_of_graphs
-from data_quality_checking import quality_check
-from data_quality_checking import check_outliers
+from data_quality_checking import run_quality_checks
+
 
 
 def main(argv):
     input_path = 'C:/Users/admin/Desktop/data_small'  # Default directory with your CSV files
     summary_path = 'C:/Users/admin/Desktop/summaries'  # Default directory to save summaries
 
-    mode = 'analyze'  # Default mode
+    mode = 'quality_check'  # Default mode
 
     try:
         # Parse command-line arguments
@@ -41,7 +41,7 @@ def main(argv):
         Autoanalysis(input_path)
     elif mode == "quality_check":
         print(f"Running Data Quality Check on data in {input_path}...")
-        quality_check(input_path, summary_path)
+        run_quality_checks(input_path)
     elif mode == "graphs":
         print("Generating graphs...")
         autoanalysis_of_graphs()
