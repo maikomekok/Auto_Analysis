@@ -50,8 +50,17 @@ def process_directory(directory_path):
         file_path = os.path.join(directory_path, csv_file)
         data = pd.read_csv(file_path)
 
+
         # Perform quality checks on each file
         if not quality_check(data, csv_file):
             print(f"Data quality check failed for {csv_file}")
-        else:
-            print(f"Data quality check passed for {csv_file}")
+        else:            print(f"Data quality check passed for {csv_file}")
+
+def timestamp_consistency():
+    pass
+
+def duplicate_values_check():
+    pass
+
+
+

@@ -1,9 +1,9 @@
 import os
 import sys
 import getopt
-
-from data_quality_checking import quality_check
 from autoanalysis import Autoanalysis, autoanalysis_of_graphs
+from data_quality_checking import quality_check
+from data_quality_checking import check_outliers
 
 
 def main(argv):
