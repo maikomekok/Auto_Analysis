@@ -78,3 +78,9 @@ def time_outliers(data,csv_file,timestamp_col = "date"):
 
     return True
 
+
+def convert_date_col(data,timestamp_column):
+    pass
+
+    # if not pd.api.types.is_datetime64_any_dtype(data[timestamp_column]):
+    #     data[timestamp_column] = pd.to_datetime(data[timestamp_column])
