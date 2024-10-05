@@ -44,20 +44,6 @@ def quality_check(data, csv_file):
     return True
 
 
-def run_quality_checks(directory_path):
-    """Process all CSV files in the directory and apply quality checks."""
-    csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
-
-    for csv_file in csv_files:
-        file_path = os.path.join(directory_path, csv_file)
-        data = pd.read_csv(file_path)
-
-        # Run quality checks on the data
-        if not quality_check(data, csv_file):
-            print(f"Data quality check failed for {csv_file}.")
-        else:
-            print(f"Data quality check passed for {csv_file}.")
-
 def check_z_score_outliers(column_data,csv_file,col_name,threshold = 3): #default threshold is 3 for the experiment
     z_scores = zscore(column_data)
     outliers = (abs(z_scores) > threshold)
@@ -80,7 +66,35 @@ def time_outliers(data,csv_file,timestamp_col = "date"):
 
 
 def convert_date_col(data,timestamp_column):
-    pass
+    if timestamp_column not in data.columns:
+        print(f"Column '{timestamp_column}' not found in the data.")
+        return False
 
-    # if not pd.api.types.is_datetime64_any_dtype(data[timestamp_column]):
-    #     data[timestamp_column] = pd.to_datetime(data[timestamp_column])
+    if not pd.api.types.is_datetime64_any_dtype(data[timestamp_column]):
+        data[timestamp_column] = pd.to_datetime(data[timestamp_column], errors='coerce')
+
+    return True
+def run_quality_checks(directory_path):
+    csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+
+    for csv_file in csv_files:
+        file_path = os.path.join(directory_path, csv_file)
+        data = pd.read_csv(file_path)
+
+        # Print column names for debugging
+        print(f"Columns in {csv_file}: {data.columns.tolist()}")
+
+        # Convert timestamp column before applying time outlier checks
+        timestamp_col = 'date'  # Ensure this column exists, or dynamically set it
+        if convert_date_col(data, timestamp_col):
+            # Run time outliers check only if timestamp conversion is successful
+            if not time_outliers(data, csv_file, timestamp_col):
+                print(f"Time-based outliers detected in {csv_file}.")
+        else:
+            print(f"Skipping time outliers check for {csv_file} due to missing timestamp column.")
+
+        # Run general quality checks on the data
+        if not quality_check(data, csv_file):
+            print(f"Data quality check failed for {csv_file}.")
+        else:
+            print(f"Data quality check passed for {csv_file}.")
