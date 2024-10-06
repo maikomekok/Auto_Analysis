@@ -4,22 +4,42 @@ from statistics import median
 from scipy.stats import zscore
 
 
-
-def check_outliers(column_data, csv_file, col_name):
+def check_price_outliers(data, csv_file, price_col='price', volatility_factor=1.5, base_threshold=3):
     """
-    Detect outliers using the Median Absolute Deviation (MAD) method.
+    Adjust the Z-score threshold dynamically based on recent volatility.
     """
-    median_val = median(column_data)
-    mad_val = median([abs(x - median_val) for x in column_data])
+    # Calculate rolling volatility (standard deviation over the last N points)
+    rolling_volatility = data[price_col].rolling(window=30).std()
 
-    # Define a threshold for outlier detection (common choice is 3 times the MAD)
-    threshold = 3 * mad_val
-    outliers = [x for x in column_data if abs(x - median_val) > threshold]
+    # Adjust the Z-score threshold based on volatility
+    z_scores = zscore(data[price_col])
+    dynamic_threshold = base_threshold + (volatility_factor * rolling_volatility / rolling_volatility.mean())
 
-    if len(outliers) > 0:
-        print(f"Outliers detected in column {col_name} of {csv_file}.")
+    outliers = (abs(z_scores) > dynamic_threshold.fillna(base_threshold))
+
+    if outliers.any():
+        print(f"Price outliers detected in column {price_col} of {csv_file}.")
         return False
+
     return True
+
+
+def calculate_exp_smooth_volatility(price_vals, alpha=0.2, init_vol=0):
+
+
+
+    # should I define initial volatility value as 0?
+
+    smooth_vol = []
+    for i in range(len(price_vals)):
+        if i == 0:
+            smooth_vol.append(init_vol)  # Initialize with the first volatility value
+        else:
+            # Calculate the squared price difference and apply the exponential moving average
+            price_diff_squared = (price_vals[i] - price_vals[i - 1]) ** 2
+            smooth_vol.append(round(exponential_moving_average(alpha, smooth_vol[-1], price_diff_squared), 6))
+
+    return smooth_vol
 
 
 def quality_check(data, csv_file):

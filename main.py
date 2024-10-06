@@ -50,7 +50,7 @@ def main(argv):
 
 
 def print_help():
-    """ Prints the usage instructions. """
+    """  Prints the usage instructions. """
     print("""
     Usage: main.py [options]
 
