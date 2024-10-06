@@ -23,11 +23,11 @@ def check_price_outliers(data, csv_file, price_col='price', volatility_factor=1.
 
     return True
 
+def exponential_moving_average(alpha, previous_ema, current_val):
+
+    return alpha * current_val + (1 - alpha) * previous_ema
 
 def calculate_exp_smooth_volatility(price_vals, alpha=0.2, init_vol=0):
-
-
-
     # should I define initial volatility value as 0?
 
     smooth_vol = []
