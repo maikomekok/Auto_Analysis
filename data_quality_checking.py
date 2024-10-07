@@ -40,7 +40,7 @@ def quality_check(data, csv_file):
     return True
 
 
-def check_z_score_outliers(column_data,csv_file,col_name,threshold = 3): #default threshold is 3 for the experiment
+def check_z_score_outliers(column_data,csv_file,col_name,threshold = 7): #default threshold is 3 for the experiment
     z_scores = zscore(column_data)
     outliers = (abs(z_scores) > threshold)
     if outliers.any():
