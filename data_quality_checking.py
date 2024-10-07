@@ -8,19 +8,86 @@ def exponential_moving_average(alpha, previous_ema, current_val):
 
     return alpha * current_val + (1 - alpha) * previous_ema
 
-def calculate_exp_smooth_volatility(price_vals, alpha=0.2, init_vol=0):
-    # should I define initial volatility value as 0?
+import pandas as pd
+import os
+import numpy as np
 
-    smooth_vol = []
-    for i in range(len(price_vals)):
-        if i == 0:
-            smooth_vol.append(init_vol)  # Initialize with the first volatility value
-        else:
-            # Calculate the squared price difference and apply the exponential moving average
-            price_diff_squared = (price_vals[i] - price_vals[i - 1]) ** 2
-            smooth_vol.append(round(exponential_moving_average(alpha, smooth_vol[-1], price_diff_squared), 6))
+def calculate_exp_smooth_volatility(price_diffs, alpha=0.2, init_vol=0):
+    """
+    Calculate the exponentially smoothed volatility (variance) of price differences.
 
+    Args:
+    - price_diffs: array of price differences.
+    - alpha: smoothing factor.
+    - init_vol: initial volatility (variance) value.
+
+    Returns:
+    - smooth_vol: array of exponentially smoothed variances.
+    """
+    smooth_vol = np.zeros_like(price_diffs)
+    previous_vol = init_vol
+    for i in range(len(price_diffs)):
+        squared_diff = price_diffs[i] ** 2
+        smoothed_var = alpha * squared_diff + (1 - alpha) * previous_vol
+        smooth_vol[i] = smoothed_var
+        previous_vol = smoothed_var
     return smooth_vol
+
+def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0, threshold=3):
+    """
+    Detect price outliers by standardizing price differences using exponentially smoothed volatility.
+
+    Args:
+    - data: DataFrame containing price columns.
+    - csv_file: Name of the CSV file (for error reporting).
+    - price_cols: List of price columns to check for outliers.
+    - base_alpha: Smoothing factor for exponential moving average.
+    - init_vol: Initial volatility value for the first observation.
+    - threshold: Threshold for detecting outliers.
+
+    Returns:
+    - True if no outliers are detected, False if outliers are found.
+    """
+    if price_cols is None:
+        # Automatically detect price columns (bid and ask prices)
+        price_cols = [col for col in data.columns if col.startswith('bid_prc') or col.startswith('ask_prc')]
+
+    outliers_detected = False
+
+    for price_col in price_cols:
+        print(f"Processing price column: {price_col} in {csv_file}")
+
+        price_vals = data[price_col].values
+
+        # Check if there are enough data points
+        if len(price_vals) < 2:
+            print(f"Not enough data points in column {price_col} to compute price differences.")
+            continue
+
+        # Compute price differences
+        price_diffs = np.diff(price_vals)
+
+        # Calculate the exponentially smoothed volatility of price differences
+        smooth_vol = calculate_exp_smooth_volatility(price_diffs, base_alpha, init_vol)
+
+        # Avoid division by zero
+        smooth_vol[smooth_vol == 0] = np.nan
+
+        # Standardize price differences
+        standardized_price_diff = price_diffs / np.sqrt(smooth_vol)
+
+        # Detect outliers where standardized price differences exceed threshold
+        outliers = np.abs(standardized_price_diff) > threshold
+
+        if np.any(outliers):
+            outlier_indices = np.where(outliers)[0] + 1  # +1 to align with original data indices
+            print(f"Price outliers detected in column {price_col} of {csv_file} at indices {outlier_indices.tolist()}.")
+            outliers_detected = True
+        else:
+            print(f"No price outliers detected in column {price_col} of {csv_file}.")
+
+    return not outliers_detected  # Return True if no outliers are found, False otherwise
+
 
 
 def quality_check(data, csv_file):
@@ -68,46 +135,46 @@ def convert_date_col(data,timestamp_column):
         data[timestamp_column] = pd.to_datetime(data[timestamp_column], errors='coerce')
 
     return True
-def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0):
-    """
-    Detect price outliers by dynamically adjusting the Z-score threshold based on exponentially smoothed volatility.
-
-    Args:
-    - data: DataFrame containing price columns.
-    - csv_file: Name of the CSV file (for error reporting).
-    - price_cols: List of price columns to check for outliers. If None, automatically detect columns with 'bid_prc' or 'ask_prc'.
-    - base_alpha: Base smoothing factor for exponential moving average (default is 0.2).
-    - init_vol: Initial volatility value for the first observation (default is 0).
-
-    Returns:
-    - True if no outliers are detected, False if outliers are found.
-    """
-    if price_cols is None:
-        # Automatically detect price columns (bid and ask prices)
-        price_cols = [col for col in data.columns if col.startswith('bid_prc') or col.startswith('ask_prc')]
-
-    outliers_detected = False
-
-    for price_col in price_cols:
-        print(f"Processing price column: {price_col} in {csv_file}")
-
-        price_vals = data[price_col].values
-
-        smooth_vol = calculate_exp_smooth_volatility(price_vals, base_alpha, init_vol)
-
-        z_scores = zscore(price_vals)
-
-        # Dynamically adjust the Z-score threshold based on smoothed volatility
-        dynamic_threshold = 3 + 1.5 * pd.Series(smooth_vol).rolling(window=30).mean().fillna(0)
-
-        # Detect outliers using the dynamically adjusted threshold
-        outliers = abs(z_scores) > dynamic_threshold
-
-        if outliers.any():
-            print(f"Price outliers detected in column {price_col} of {csv_file}.")
-            outliers_detected = True  # Set flag to true if any outliers are found
-
-    return not outliers_detected  # Return True if no outliers are found, False otherwise
+# def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0):
+#     """
+#     Detect price outliers by dynamically adjusting the Z-score threshold based on exponentially smoothed volatility.
+#
+#     Args:
+#     - data: DataFrame containing price columns.
+#     - csv_file: Name of the CSV file (for error reporting).
+#     - price_cols: List of price columns to check for outliers. If None, automatically detect columns with 'bid_prc' or 'ask_prc'.
+#     - base_alpha: Base smoothing factor for exponential moving average (default is 0.2).
+#     - init_vol: Initial volatility value for the first observation (default is 0).
+#
+#     Returns:
+#     - True if no outliers are detected, False if outliers are found.
+#     """
+#     if price_cols is None:
+#         # Automatically detect price columns (bid and ask prices)
+#         price_cols = [col for col in data.columns if col.startswith('bid_prc') or col.startswith('ask_prc')]
+#
+#     outliers_detected = False
+#
+#     for price_col in price_cols:
+#         print(f"Processing price column: {price_col} in {csv_file}")
+#
+#         price_vals = data[price_col].values
+#
+#         smooth_vol = calculate_exp_smooth_volatility(price_vals, base_alpha, init_vol)
+#
+#         z_scores = zscore(price_vals)
+#
+#         # Dynamically adjust the Z-score threshold based on smoothed volatility
+#         dynamic_threshold = 3 + 1.5 * pd.Series(smooth_vol).rolling(window=30).mean().fillna(0)
+#
+#         # Detect outliers using the dynamically adjusted threshold
+#         outliers = abs(z_scores) > dynamic_threshold
+#
+#         if outliers.any():
+#             print(f"Price outliers detected in column {price_col} of {csv_file}.")
+#             outliers_detected = True  # Set flag to true if any outliers are found
+#
+#     return not outliers_detected  # Return True if no outliers are found, False otherwise
 
 
 def run_quality_checks(directory_path):
