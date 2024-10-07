@@ -121,7 +121,7 @@ def run_quality_checks(directory_path):
         file_path = os.path.join(directory_path, csv_file)
         data = pd.read_csv(file_path)
 
-        data.fillna(method='ffill', inplace=True)  # Forward-fill missing values
+        data.fillna(method='ffill', inplace=True)  # Forward filling missing values
 
         # Print column names for debugging
         print(f"Columns in {csv_file}: {data.columns.tolist()}")
