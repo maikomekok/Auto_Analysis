@@ -5,7 +5,7 @@ from scipy.stats import zscore
 
 
 
-def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=7000):
+def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=70000):
 
     if price_cols is None:
         # Automatically detect price columns (bid and ask prices)
@@ -40,7 +40,9 @@ def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20,
         standardized_pct_change = pct_changes_series / rolling_std
 
         # Detect sudden changes where standardized percentage change exceeds threshold
-        sudden_changes = np.abs(standardized_pct_change) > threshold
+        sudden_changes = (np.abs(standardized_pct_change) > threshold) & (pct_changes_series != 0)
+
+
 
         if sudden_changes.any():
             sudden_change_indices = sudden_changes[sudden_changes].index + 1  # +1 to align with original data indices
@@ -80,7 +82,7 @@ def quality_check(data, csv_file):
 
     return True
 
-def check_z_score_outliers(column_data, csv_file, col_name, threshold=7000):
+def check_z_score_outliers(column_data, csv_file, col_name, threshold=70000):
     z_scores = zscore(column_data)
     outliers = (abs(z_scores) > threshold)
     if outliers.any():
@@ -108,7 +110,7 @@ def convert_date_col(data, timestamp_column):
 
     return True
 
-def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0, threshold=700):
+def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0, threshold=7000):
     """
     Detect price outliers by standardizing price differences using exponentially smoothed volatility.
 
@@ -122,7 +124,9 @@ def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_v
 
     Returns:
     - True if no outliers are detected, False if outliers are found.
+
     """
+
     if price_cols is None:
         # Automatically detect price columns (bid and ask prices)
         price_cols = [col for col in data.columns if 'bid_prc' in col or 'ask_prc' in col]
@@ -155,6 +159,9 @@ def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_v
 
         # Detect outliers where standardized price differences exceed threshold
         outliers = np.abs(standardized_price_diff) > threshold
+
+        np.z
+
 
         if np.any(outliers):
             outlier_indices = np.where(outliers)[0] + 1  # +1 to align with original data indices
