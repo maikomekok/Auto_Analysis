@@ -1,37 +1,112 @@
 import pandas as pd
 import os
-from statistics import median
+import numpy as np
 from scipy.stats import zscore
 
 
-def exponential_moving_average(alpha, previous_ema, current_val):
 
+def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=3):
+
+    if price_cols is None:
+        # Automatically detect price columns (bid and ask prices)
+        price_cols = [col for col in data.columns if 'bid_prc' in col or 'ask_prc' in col]
+
+    sudden_changes_detected = False
+
+    for price_col in price_cols:
+        print(f"Processing price column: {price_col} in {csv_file}")
+
+        price_vals = data[price_col].values
+
+        # Check if there are enough data points
+        if len(price_vals) < window_size + 1:
+            print(f"Not enough data points in column {price_col} for the rolling window.")
+            continue
+
+        # Compute percentage price changes
+        pct_changes = np.diff(price_vals) / price_vals[:-1]
+
+        # Convert to pandas Series for rolling calculations
+        pct_changes_series = pd.Series(pct_changes)
+
+        # Calculate rolling standard deviation excluding the current observation
+        rolling_std = pct_changes_series.rolling(window=window_size, min_periods=1).std().shift(1)
+
+        # Avoid division by zero or very small numbers
+        epsilon = 1e-8
+        rolling_std[rolling_std < epsilon] = epsilon
+
+        # Standardize percentage changes
+        standardized_pct_change = pct_changes_series / rolling_std
+
+        # Detect sudden changes where standardized percentage change exceeds threshold
+        sudden_changes = np.abs(standardized_pct_change) > threshold
+
+        if sudden_changes.any():
+            sudden_change_indices = sudden_changes[sudden_changes].index + 1  # +1 to align with original data indices
+            print(f"Sudden price changes detected in column {price_col} of {csv_file} at indices {sudden_change_indices.tolist()}.")
+            sudden_changes_detected = True
+        else:
+            print(f"No sudden price changes detected in column {price_col} of {csv_file}.")
+
+    return not sudden_changes_detected  # Return True if no sudden changes are found, False otherwise
+
+
+def exponential_moving_average(alpha, previous_ema, current_val):
     return alpha * current_val + (1 - alpha) * previous_ema
 
-import pandas as pd
-import os
-import numpy as np
-
 def calculate_exp_smooth_volatility(price_diffs, alpha=0.2, init_vol=0):
-    """
-    Calculate the exponentially smoothed volatility (variance) of price differences.
-
-    Args:
-    - price_diffs: array of price differences.
-    - alpha: smoothing factor.
-    - init_vol: initial volatility (variance) value.
-
-    Returns:
-    - smooth_vol: array of exponentially smoothed variances.
-    """
     smooth_vol = np.zeros_like(price_diffs)
     previous_vol = init_vol
     for i in range(len(price_diffs)):
+        # Use previous_vol as the volatility estimate for standardization
+        smooth_vol[i] = previous_vol
+
+        # Update previous_vol with the current squared difference
         squared_diff = price_diffs[i] ** 2
         smoothed_var = alpha * squared_diff + (1 - alpha) * previous_vol
-        smooth_vol[i] = smoothed_var
         previous_vol = smoothed_var
     return smooth_vol
+def quality_check(data, csv_file):
+    # Check for missing values
+    if data.isnull().values.any():
+        print(f"Missing data detected in {csv_file}.")
+        return False
+
+    # Check for duplicate rows
+    if data.duplicated().any():
+        print(f"Duplicate data detected in {csv_file}.")
+        return False
+
+    return True
+
+def check_z_score_outliers(column_data, csv_file, col_name, threshold=7):
+    z_scores = zscore(column_data)
+    outliers = (abs(z_scores) > threshold)
+    if outliers.any():
+        print(f"Outliers detected in column {col_name} of CSV file {csv_file}")
+        return False
+    return True
+
+def time_outliers(data, csv_file, timestamp_col="date"):
+    data = data.sort_values(by=timestamp_col)
+    timediff = data[timestamp_col].diff().dt.total_seconds().dropna()
+
+    if not check_z_score_outliers(timediff, csv_file, 'time_since_last_update'):
+        return False
+
+    return True
+
+def convert_date_col(data, timestamp_column):
+
+    if timestamp_column not in data.columns:
+        print(f"Column '{timestamp_column}' not found in the data.")
+        return False
+
+    if not pd.api.types.is_datetime64_any_dtype(data[timestamp_column]):
+        data[timestamp_column] = pd.to_datetime(data[timestamp_column], errors='coerce')
+
+    return True
 
 def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0, threshold=3):
     """
@@ -50,7 +125,7 @@ def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_v
     """
     if price_cols is None:
         # Automatically detect price columns (bid and ask prices)
-        price_cols = [col for col in data.columns if col.startswith('bid_prc') or col.startswith('ask_prc')]
+        price_cols = [col for col in data.columns if 'bid_prc' in col or 'ask_prc' in col]
 
     outliers_detected = False
 
@@ -67,11 +142,13 @@ def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_v
         # Compute price differences
         price_diffs = np.diff(price_vals)
 
-        # Calculate the exponentially smoothed volatility of price differences
+        # Calculate the exponentially smoothed volatility of price differences,
+        # excluding the current squared difference
         smooth_vol = calculate_exp_smooth_volatility(price_diffs, base_alpha, init_vol)
 
-        # Avoid division by zero
-        smooth_vol[smooth_vol == 0] = np.nan
+        # Avoid division by zero or very small numbers to prevent inflated standardized scores
+        epsilon = 1e-8
+        smooth_vol[smooth_vol < epsilon] = epsilon
 
         # Standardize price differences
         standardized_price_diff = price_diffs / np.sqrt(smooth_vol)
@@ -88,113 +165,21 @@ def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_v
 
     return not outliers_detected  # Return True if no outliers are found, False otherwise
 
-
-
-def quality_check(data, csv_file):
-    """Check for missing values, duplicates"""
-
-    # Check for missing values
-    if data.isnull().values.any():
-        print(f"Missing data detected in {csv_file}.")
-        return False
-
-    # Check for duplicate rows
-    if data.duplicated().any():
-        print(f"Duplicate data detected in {csv_file}.")
-        return False
-
-
-    return True
-
-
-def check_z_score_outliers(column_data,csv_file,col_name,threshold = 7): #default threshold is 3 for the experiment
-    z_scores = zscore(column_data)
-    outliers = (abs(z_scores) > threshold)
-    if outliers.any():
-        print(f"Outliers detected in column {col_name} of csv file {csv_file}")
-        return False
-    return True
-
-def time_outliers(data,csv_file,timestamp_col = "date"):
-    data = data.sort_values(by=timestamp_col)
-    timediff = data[timestamp_col].diff().dt.total_seconds().dropna()
-
-
-    if not check_z_score_outliers(timediff, csv_file, 'time_since_last_update'):
-        return False
-
-    return True
-
-
-def convert_date_col(data,timestamp_column):
-    if timestamp_column not in data.columns:
-        print(f"Column '{timestamp_column}' not found in the data.")
-        return False
-
-    if not pd.api.types.is_datetime64_any_dtype(data[timestamp_column]):
-        data[timestamp_column] = pd.to_datetime(data[timestamp_column], errors='coerce')
-
-    return True
-# def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0):
-#     """
-#     Detect price outliers by dynamically adjusting the Z-score threshold based on exponentially smoothed volatility.
-#
-#     Args:
-#     - data: DataFrame containing price columns.
-#     - csv_file: Name of the CSV file (for error reporting).
-#     - price_cols: List of price columns to check for outliers. If None, automatically detect columns with 'bid_prc' or 'ask_prc'.
-#     - base_alpha: Base smoothing factor for exponential moving average (default is 0.2).
-#     - init_vol: Initial volatility value for the first observation (default is 0).
-#
-#     Returns:
-#     - True if no outliers are detected, False if outliers are found.
-#     """
-#     if price_cols is None:
-#         # Automatically detect price columns (bid and ask prices)
-#         price_cols = [col for col in data.columns if col.startswith('bid_prc') or col.startswith('ask_prc')]
-#
-#     outliers_detected = False
-#
-#     for price_col in price_cols:
-#         print(f"Processing price column: {price_col} in {csv_file}")
-#
-#         price_vals = data[price_col].values
-#
-#         smooth_vol = calculate_exp_smooth_volatility(price_vals, base_alpha, init_vol)
-#
-#         z_scores = zscore(price_vals)
-#
-#         # Dynamically adjust the Z-score threshold based on smoothed volatility
-#         dynamic_threshold = 3 + 1.5 * pd.Series(smooth_vol).rolling(window=30).mean().fillna(0)
-#
-#         # Detect outliers using the dynamically adjusted threshold
-#         outliers = abs(z_scores) > dynamic_threshold
-#
-#         if outliers.any():
-#             print(f"Price outliers detected in column {price_col} of {csv_file}.")
-#             outliers_detected = True  # Set flag to true if any outliers are found
-#
-#     return not outliers_detected  # Return True if no outliers are found, False otherwise
-
-
 def run_quality_checks(directory_path):
-    """
-    Process all CSV files in the directory and apply quality checks.
-    This includes time-based and price outlier detection.
-    """
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
 
     for csv_file in csv_files:
         file_path = os.path.join(directory_path, csv_file)
         data = pd.read_csv(file_path)
 
-        data.fillna(method='ffill', inplace=True)  # Forward filling missing values
+        # Forward fill missing values
+        data.fillna(method='ffill', inplace=True)
 
         # Print column names for debugging
         print(f"Columns in {csv_file}: {data.columns.tolist()}")
 
         # Convert timestamp column before applying time outlier checks
-        timestamp_col = 'date'  # Ensure this column exists, or dynamically set it
+        timestamp_col = 'date'  # Ensure this column exists or set it accordingly
         if convert_date_col(data, timestamp_col):
             # Run time outliers check only if timestamp conversion is successful
             if not time_outliers(data, csv_file, timestamp_col):
@@ -203,7 +188,7 @@ def run_quality_checks(directory_path):
             print(f"Skipping time outliers check for {csv_file} due to missing timestamp column.")
 
         # Run price outliers detection on all price columns
-        if not check_price_outliers(data, csv_file):
+        if not detect_sudden_price_changes(data, csv_file):
             print(f"Price outliers detected in {csv_file}.")
         else:
             print(f"Data quality check passed for {csv_file}.")
