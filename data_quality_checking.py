@@ -5,7 +5,7 @@ from scipy.stats import zscore
 
 
 
-adef detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=900):
+def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=900):
 
     if price_cols is None:
         # Automatically detect price columns (bid and ask prices)
