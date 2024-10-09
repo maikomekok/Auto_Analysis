@@ -5,7 +5,7 @@ from scipy.stats import zscore
 
 
 
-def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=900):
+def detect_sudden_price_changes(data, csv_file, price_cols=None, window_size=20, threshold=7000):
 
     if price_cols is None:
         # Automatically detect price columns (bid and ask prices)
@@ -80,7 +80,7 @@ def quality_check(data, csv_file):
 
     return True
 
-def check_z_score_outliers(column_data, csv_file, col_name, threshold=7):
+def check_z_score_outliers(column_data, csv_file, col_name, threshold=7000):
     z_scores = zscore(column_data)
     outliers = (abs(z_scores) > threshold)
     if outliers.any():
@@ -108,7 +108,7 @@ def convert_date_col(data, timestamp_column):
 
     return True
 
-def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0, threshold=3):
+def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_vol=0, threshold=700):
     """
     Detect price outliers by standardizing price differences using exponentially smoothed volatility.
 
