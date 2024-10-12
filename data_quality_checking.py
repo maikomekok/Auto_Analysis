@@ -172,6 +172,21 @@ def check_price_outliers(data, csv_file, price_cols=None, base_alpha=0.2, init_v
 
     return not outliers_detected  # Return True if no outliers are found, False otherwise
 
+
+def remove_zero_entries(data, price_col, volume_col):
+    # Identify rows where both price and volume are zero
+    zero_entries = (data[price_col] == 0) & (data[volume_col] == 0)
+
+    # Count how many zero entries there are
+    zero_count = zero_entries.sum()
+    print(f"Number of entries where both price and volume are zero: {zero_count}")
+
+    # Remove those entries from the data
+    data = data[~zero_entries].reset_index(drop=True)
+
+    return data, zero_count
+
+
 def run_quality_checks(directory_path):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
 
@@ -184,6 +199,10 @@ def run_quality_checks(directory_path):
 
         # Print column names for debugging
         print(f"Columns in {csv_file}: {data.columns.tolist()}")
+        price_col = 'price'
+        volume_col = 'volume'
+        data, zero_count = remove_zero_entries(data, price_col, volume_col)
+        print(f"After removing zero entries, data has {len(data)} rows.")
 
         # Convert timestamp column before applying time outlier checks
         timestamp_col = 'date'  # Ensure this column exists or set it accordingly
