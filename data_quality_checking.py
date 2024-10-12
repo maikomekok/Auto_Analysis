@@ -62,16 +62,26 @@ def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None, window
 def interpolate_zeros(data, price_cols):
     for price_col in price_cols:
         if price_col in data.columns:
-            print(f"Interpolating zero values in column {price_col}.")
-            data[price_col].replace(0, np.nan, inplace=True)
-            data[price_col].interpolate(method='linear', inplace=True)  # Linear interpolation
-            # Fill any remaining NaN with a forward/backward fill
-            data[price_col].fillna(method='ffill', inplace=True)
-            data[price_col].fillna(method='bfill', inplace=True)
+            # Convert the column to a numeric type (if it isn't already)
+            data[price_col] = pd.to_numeric(data[price_col], errors='coerce')
+
+            # Print rows with zero values for debugging
+            zero_rows = data[data[price_col] == 0]
+            if not zero_rows.empty:
+                print(f"Found zero values in column {price_col}:")
+                print(zero_rows)
+
+                # Replace zero values with NaN and then interpolate
+                data[price_col].replace(0, np.nan, inplace=True)
+
+                # Perform the interpolation
+                data[price_col].interpolate(method='linear', inplace=True)
+
+                # Optionally fill remaining NaN values (if any zeros were at the start or end)
+                data[price_col].fillna(method='ffill', inplace=True)
+                data[price_col].fillna(method='bfill', inplace=True)
 
     return data
-
-
 def calculate_exp_smooth_volatility(price_diffs, alpha=0.2, init_vol=0):
     smooth_vol = np.zeros_like(price_diffs)
     previous_vol = init_vol
@@ -150,9 +160,14 @@ def run_quality_checks(directory_path):
         # Forward fill missing values
         data.fillna(method='ffill', inplace=True)
 
-        # Remove zero entries where both price and volume are zero in any price-volume pair
+        price_cols = [col for col in data.columns if 'bid_prc' in col or 'ask_prc' in col]  # Example column filtering
+
         zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
-        print(f"After removing zero entries, data has {len(data)} rows.")
+
+        data = interpolate_zeros(data, price_cols)
+        data.to_csv(file_path, index=False)
+        print(f"Interpolated values saved back to {csv_file}.")
+
 
         # Convert timestamp column before applying time outlier checks
         timestamp_col = 'date'  # Ensure this column exists or set it accordingly
