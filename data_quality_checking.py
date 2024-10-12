@@ -18,6 +18,8 @@ def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None, window
     if price_cols is None:
         price_cols = all_price_cols
 
+
+
     sudden_changes_detected = False
 
     for price_col in price_cols:
@@ -56,6 +58,19 @@ def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None, window
             print(f"No sudden price changes detected in column {price_col} of {csv_file}.")
 
     return not sudden_changes_detected  # Return True if no sudden changes are found, False otherwise
+
+def interpolate_zeros(data, price_cols):
+    for price_col in price_cols:
+        if price_col in data.columns:
+            print(f"Interpolating zero values in column {price_col}.")
+            data[price_col].replace(0, np.nan, inplace=True)
+            data[price_col].interpolate(method='linear', inplace=True)  # Linear interpolation
+            # Fill any remaining NaN with a forward/backward fill
+            data[price_col].fillna(method='ffill', inplace=True)
+            data[price_col].fillna(method='bfill', inplace=True)
+
+    return data
+
 
 def calculate_exp_smooth_volatility(price_diffs, alpha=0.2, init_vol=0):
     smooth_vol = np.zeros_like(price_diffs)
@@ -98,7 +113,7 @@ def convert_date_col(data, timestamp_column):
     return True
 
 # Function to remove zero entries from price-volume pairs
-def remove_zero_entries_multiple(data, price_cols, volume_cols):
+def detect_zero_entries_multiple(data, price_cols, volume_cols):
     zero_entries = pd.Series(False, index=data.index)
 
     for price_col, volume_col in zip(price_cols, volume_cols):
@@ -114,9 +129,7 @@ def remove_zero_entries_multiple(data, price_cols, volume_cols):
     zero_count = zero_entries.sum()
     print(f"Number of entries where both price and volume are zero in any pair: {zero_count}")
 
-    # Remove the zero entries
-    data_cleaned = data[~zero_entries].reset_index(drop=True)
-    return data_cleaned, zero_count
+    return  zero_count
 
 
 # Main function to run data quality checks
@@ -138,7 +151,7 @@ def run_quality_checks(directory_path):
         data.fillna(method='ffill', inplace=True)
 
         # Remove zero entries where both price and volume are zero in any price-volume pair
-        data, zero_count = remove_zero_entries_multiple(data, all_price_cols, all_volume_cols)
+        zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
         print(f"After removing zero entries, data has {len(data)} rows.")
 
         # Convert timestamp column before applying time outlier checks
