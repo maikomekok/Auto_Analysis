@@ -18,8 +18,6 @@ def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None, window
     if price_cols is None:
         price_cols = all_price_cols
 
-
-
     sudden_changes_detected = False
 
     for price_col in price_cols:
@@ -95,7 +93,7 @@ def calculate_exp_smooth_volatility(price_diffs, alpha=0.2, init_vol=0):
     return smooth_vol
 
 # Function to check for z-score outliers
-def check_z_score_outliers(column_data, csv_file, col_name, threshold=3):
+def check_z_score_outliers(column_data, csv_file, col_name, threshold=3000):
     z_scores = zscore(column_data)
     outliers = (abs(z_scores) > threshold)
     if outliers.any():
@@ -103,15 +101,35 @@ def check_z_score_outliers(column_data, csv_file, col_name, threshold=3):
         return False
     return True
 
-# Function to detect time-based outliers
-def time_outliers(data, csv_file, timestamp_col="date"):
-    data = data.sort_values(by=timestamp_col)
-    timediff = data[timestamp_col].diff().dt.total_seconds().dropna()
-    if not check_z_score_outliers(timediff, csv_file, 'time_since_last_update'):
-        return False
-    return True
 
-# Function to convert date column to datetime
+def detect_time_based_outliers(data, timestamp_col, threshold_ms=600):
+    if timestamp_col not in data.columns:
+        print(f"Timestamp column '{timestamp_col}' not found in the data.")
+        return data, None
+    data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
+    data = data.sort_values(by=timestamp_col)
+    data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 1000  # Convert to milliseconds
+    outliers = data[data['time_diff_ms'] > threshold_ms]
+    print(f"Found {len(outliers)} time-based outliers where time difference exceeds {threshold_ms} milliseconds.")
+
+    return data, outliers
+
+def run_time_outlier_detection(directory_path, timestamp_col='date', threshold_ms=600):
+    csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+
+    for csv_file in csv_files:
+        file_path = os.path.join(directory_path, csv_file)
+        data = pd.read_csv(file_path)
+        data.columns = data.columns.str.strip().str.lower()
+        data, outliers = detect_time_based_outliers(data, timestamp_col, threshold_ms)
+
+        if outliers is not None and not outliers.empty:
+            print(f"Time-based outliers found in {csv_file}:")
+            print(outliers[['time_diff_ms', timestamp_col]])
+        else:
+            print(f"No time-based outliers found in {csv_file}.")
+
+
 def convert_date_col(data, timestamp_column):
     if timestamp_column not in data.columns:
         print(f"Column '{timestamp_column}' not found in the data.")
@@ -173,7 +191,7 @@ def run_quality_checks(directory_path):
         timestamp_col = 'date'  # Ensure this column exists or set it accordingly
         if convert_date_col(data, timestamp_col):
             # Run time outliers check only if timestamp conversion is successful
-            if not time_outliers(data, csv_file, timestamp_col):
+            if not run_time_outlier_detection(directory_path):
                 print(f"Time-based outliers detected in {csv_file}.")
         else:
             print(f"Skipping time outliers check for {csv_file} due to missing timestamp column.")
