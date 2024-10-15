@@ -36,6 +36,7 @@ def main(argv):
 
 
     # Execute based on the selected mode
+
     if mode == "analyze":
         print(f"Running Autoanalysis on data in {input_path}...")
         Autoanalysis(input_path)
@@ -60,6 +61,7 @@ def print_help():
     -m, --mode      Mode of operation: 'analyze', 'quality_check', or 'graphs' (default: analyze)
     -h, --help      Display this help message
     """)
+    print()
 
 
 if __name__ == '__main__':
