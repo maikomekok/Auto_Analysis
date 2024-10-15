@@ -14,7 +14,7 @@ ask_volume_cols = [f'ask_vol{level}' for level in price_levels]
 all_volume_cols = bid_volume_cols + ask_volume_cols
 
 
-def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None, window_size=20, threshold=3, min_std=1e-4, min_change=1e-4):
+def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None, window_size=20, threshold=3000, min_std=1e-4, min_change=1e-4):
     if price_cols is None:
         price_cols = all_price_cols
 
