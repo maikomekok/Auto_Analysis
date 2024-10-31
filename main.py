@@ -5,7 +5,6 @@ from autoanalysis import Autoanalysis, autoanalysis_of_graphs
 from data_quality_checking import run_quality_checks
 
 
-
 def main(argv):
     input_path = 'C:/Users/admin/Desktop/data_small'  # Default directory of CSV files
     summary_path = 'C:/Users/admin/Desktop/summaries'  # Default directory of summaries
