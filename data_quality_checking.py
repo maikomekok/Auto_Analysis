@@ -138,15 +138,18 @@ def detect_zero_entries_multiple(data, price_cols, volume_cols):
     return zero_count
 
 def check_duplicates(data,csv_file,subset = None):
-    duplicates = data.duplicated(subset=subset, keep=False)  # Mark all duplicates
+    data_for_dup_check = data.iloc[0:]
+
+    # Check for duplicates in specified columns (subset) or across all columns if None
+    duplicates = data_for_dup_check.duplicated(subset=subset, keep=False)
     duplicate_count = duplicates.sum()
 
     if duplicate_count > 0:
-        print(f"{duplicate_count} duplicate rows found in {csv_file}.")
+        print(f"{duplicate_count} duplicate rows found in {csv_file} (excluding the first row).")
         print("Duplicate rows:")
-        print(data[duplicates])
+        print(data_for_dup_check[duplicates])
     else:
-        print(f"No duplicate rows found in {csv_file}.")
+        print(f"No duplicate rows found in {csv_file} (excluding the first row).")
 
     return duplicate_count
 
