@@ -43,8 +43,6 @@ def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None):
             indices = sudden_changes[sudden_changes].index + 1
             print(f"Sudden price changes detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
             sudden_changes_detected = True
-        else:
-            print(f"No sudden price changes detected in column {price_col} of {csv_file}.")
 
     return not sudden_changes_detected
 
@@ -55,8 +53,7 @@ def detect_time_based_outliers(data, timestamp_col):
 
     data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
     data = data.sort_values(by=timestamp_col)
-    data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 1000
-    print(data["time_diff_ms"])
+    data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() *100
     outliers = data[data['time_diff_ms'] >= THRESHOLD_MS]
     print(f"Found {len(outliers)} time-based outliers where time difference exceeds {THRESHOLD_MS} milliseconds.")
 
@@ -108,8 +105,6 @@ def run_time_outlier_detection(directory_path, timestamp_col='date'):
         if outliers is not None and not outliers.empty:
             print(f"Time-based outliers found in {csv_file}:")
             print(outliers[['time_diff_ms', timestamp_col]])
-        else:
-            print(f"No time-based outliers found in {csv_file}.")
 
 def convert_date_col(data, timestamp_column):
     if timestamp_column not in data.columns:
@@ -137,20 +132,17 @@ def detect_zero_entries_multiple(data, price_cols, volume_cols):
     print(f"Number of entries where both price and volume are zero in any pair: {zero_count}")
     return zero_count
 
-def check_duplicates(data,csv_file,subset = None):
-    data_for_dup_check = data.iloc[0:]
 
-    # Check for duplicates in specified columns (subset) or across all columns if None
-    duplicates = data_for_dup_check.duplicated(subset=subset, keep=False)
+def check_duplicates(data, csv_file):
+    data_for_dup_check = data.iloc[:, 1:]  # Select all rows, and all columns except the first one
+
+    duplicates = data_for_dup_check.duplicated(keep=False)
     duplicate_count = duplicates.sum()
 
     if duplicate_count > 0:
-        print(f"{duplicate_count} duplicate rows found in {csv_file} (excluding the first row).")
+        print(f"{duplicate_count} duplicate rows found in {csv_file} (excluding the first column).")
         print("Duplicate rows:")
-        print(data_for_dup_check[duplicates])
-    else:
-        print(f"No duplicate rows found in {csv_file} (excluding the first row).")
-
+        print(data[duplicates])
     return duplicate_count
 
 
@@ -168,8 +160,6 @@ def run_quality_checks(directory_path):
 
         zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
         interpolate_zeros(data, all_price_cols)
-        data.to_csv(file_path, index=False)
-        print(f"Interpolated values saved back to {csv_file}.")
 
         if convert_date_col(data, 'date'):
             run_time_outlier_detection(directory_path, timestamp_col='date')
