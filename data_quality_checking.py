@@ -4,12 +4,12 @@ import numpy as np
 from scipy.stats import zscore
 
 # Define constants
-THRESHOLD = 300          # Threshold for sudden price changes and outliers
-THRESHOLD_MS = 600        # Time difference threshold in milliseconds
-WINDOW_SIZE = 20          # Rolling window size
-MIN_STD = 1e-4            # Minimum standard deviation
-MIN_CHANGE = 1e-4         # Minimum price change
-
+THRESHOLD = 3              # Threshold for sudden price changes
+THRESHOLD_MS = 750         # Time difference threshold in milliseconds
+WINDOW_SIZE = 20           # Rolling window size
+MIN_STD = 1e-4             # Minimum standard deviation
+MIN_CHANGE = 1000          # Minimum price change
+Z_THRESHOLD = 4         # Z-score threshold for outliers
 
 price_levels = range(1, 21)
 bid_price_cols = [f'bid_prc{level}' for level in price_levels]
@@ -19,32 +19,52 @@ bid_volume_cols = [f'bid_vol{level}' for level in price_levels]
 ask_volume_cols = [f'ask_vol{level}' for level in price_levels]
 all_volume_cols = bid_volume_cols + ask_volume_cols
 
-def detect_sudden_price_changes_multiple(data, csv_file, price_cols=None):
+
+def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRESHOLD, sudden_threshold=THRESHOLD,
+                             min_change=MIN_CHANGE, window_size=WINDOW_SIZE, min_std=MIN_STD):
     if price_cols is None:
         price_cols = all_price_cols
 
-    sudden_changes_detected = False
+    combined_outliers_detected = False
 
     for price_col in price_cols:
-        price_vals = data[price_col].values
-
-        if len(price_vals) < WINDOW_SIZE + 1:
-            print(f"Not enough data points in column {price_col} for the rolling window.")
+        if price_col not in data.columns:
+            print(f"Column {price_col} not found in data.")
             continue
 
-        pct_changes = np.diff(price_vals) / price_vals[:-1]
-        pct_changes_series = pd.Series(pct_changes)
-        rolling_std = pct_changes_series.rolling(window=WINDOW_SIZE, min_periods=1).std().shift(1)
-        rolling_std[rolling_std < MIN_STD] = np.nan
-        standardized_pct_change = pct_changes_series / rolling_std
-        sudden_changes = (np.abs(standardized_pct_change) > THRESHOLD) & (np.abs(pct_changes_series) > MIN_CHANGE)
+        price_vals = data[price_col].values
 
-        if sudden_changes.any():
-            indices = sudden_changes[sudden_changes].index + 1
-            print(f"Sudden price changes detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
-            sudden_changes_detected = True
+        # Z-Score Outlier Detection
+        z_scores = zscore(price_vals)
+        z_outliers = np.abs(z_scores) > z_threshold
+        if z_outliers.any():
+            indices = np.where(z_outliers)[0]
+            print(f"Z-score outliers detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
+            combined_outliers_detected = True
 
-    return not sudden_changes_detected
+        # Sudden Price Change Detection
+        if len(price_vals) >= window_size + 1:
+            pct_changes = np.diff(price_vals) / price_vals[:-1]
+            pct_changes_series = pd.Series(pct_changes)
+
+            rolling_std = pct_changes_series.rolling(window=window_size, min_periods=1).std().shift(1)
+            rolling_std[rolling_std < min_std] = np.nan
+            standardized_pct_change = pct_changes_series / rolling_std
+            sudden_changes = (np.abs(standardized_pct_change) > sudden_threshold) & (
+                    np.abs(pct_changes_series) > min_change)
+
+            if sudden_changes.any():
+                indices = sudden_changes[sudden_changes].index + 1  # Adjust for shift
+                print(f"Sudden price changes detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
+                combined_outliers_detected = True
+
+    if not combined_outliers_detected:
+        print(f"No outliers or sudden price changes detected in {csv_file}.")
+    else:
+        print(f"Outliers or sudden price changes detected in {csv_file}.")
+
+    return not combined_outliers_detected
+
 
 def detect_time_based_outliers(data, timestamp_col):
     if timestamp_col not in data.columns:
@@ -53,13 +73,13 @@ def detect_time_based_outliers(data, timestamp_col):
 
     data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
     data = data.sort_values(by=timestamp_col)
-    data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() *100
+    data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 100
     outliers = data[data['time_diff_ms'] >= THRESHOLD_MS]
     print(f"Found {len(outliers)} time-based outliers where time difference exceeds {THRESHOLD_MS} milliseconds.")
 
     return data, outliers
 
-# Interpolate zeros
+
 def interpolate_zeros(data, price_cols):
     for price_col in price_cols:
         if price_col in data.columns:
@@ -67,31 +87,12 @@ def interpolate_zeros(data, price_cols):
             zero_rows = data[data[price_col] == 0]
             if not zero_rows.empty:
                 print(f"Found zero values in column {price_col}.")
-                data[price_col].replace(0, np.nan)
-                data[price_col].interpolate(method='linear')
-                data[price_col].fillna(method='ffill')
-                data[price_col].fillna(method='bfill')
+                data[price_col].replace(0, np.nan, inplace=True)
+                data[price_col].interpolate(method='linear', inplace=True)
+                data[price_col].fillna(method='ffill', inplace=True)
+                data[price_col].fillna(method='bfill', inplace=True)
     return data
 
-
-def calculate_exp_smooth_volatility(price_diffs, alpha=0.2, init_vol=0):
-    smooth_vol = np.zeros_like(price_diffs)
-    previous_vol = init_vol
-    for i in range(len(price_diffs)):
-        smooth_vol[i] = previous_vol
-        squared_diff = price_diffs[i] ** 2
-        smoothed_var = alpha * squared_diff + (1 - alpha) * previous_vol
-        previous_vol = smoothed_var
-    return smooth_vol
-
-
-def check_z_score_outliers(column_data, csv_file, col_name, threshold=THRESHOLD):
-    z_scores = zscore(column_data)
-    outliers = (abs(z_scores) > threshold)
-    if outliers.any():
-        print(f"Outliers detected in column {col_name} of CSV file {csv_file}")
-        return False
-    return True
 
 def run_time_outlier_detection(directory_path, timestamp_col='date'):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
@@ -105,16 +106,6 @@ def run_time_outlier_detection(directory_path, timestamp_col='date'):
         if outliers is not None and not outliers.empty:
             print(f"Time-based outliers found in {csv_file}:")
             print(outliers[['time_diff_ms', timestamp_col]])
-
-def convert_date_col(data, timestamp_column):
-    if timestamp_column not in data.columns:
-        print(f"Column '{timestamp_column}' not found in the data.")
-        return False
-
-    if not pd.api.types.is_datetime64_any_dtype(data[timestamp_column]):
-        data[timestamp_column] = pd.to_datetime(data[timestamp_column], errors='coerce')
-
-    return True
 
 
 def detect_zero_entries_multiple(data, price_cols, volume_cols):
@@ -141,8 +132,6 @@ def check_duplicates(data, csv_file):
 
     if duplicate_count > 0:
         print(f"{duplicate_count} duplicate rows found in {csv_file} (excluding the first column).")
-        print("Duplicate rows:")
-        print(data[duplicates])
     return duplicate_count
 
 
@@ -156,17 +145,21 @@ def run_quality_checks(directory_path):
         print(f"Columns in {csv_file}: {data.columns.tolist()}")
         data.fillna(method='ffill', inplace=True)
 
+        # Check for duplicates
         check_duplicates(data, csv_file)
 
+        # Detect and interpolate zero entries
         zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
         interpolate_zeros(data, all_price_cols)
 
-        if convert_date_col(data, 'date'):
+        # Convert date column for time-based checks
+        if 'date' in data.columns:
             run_time_outlier_detection(directory_path, timestamp_col='date')
         else:
             print(f"Skipping time outliers check for {csv_file} due to missing timestamp column.")
 
-        if not detect_sudden_price_changes_multiple(data, csv_file, price_cols=all_price_cols):
-            print(f"Sudden price changes detected in {csv_file}.")
-        else:
-            print(f"Data quality check passed for {csv_file}.")
+        # Detect combined outliers and sudden price changes
+        detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
+
+        print(f"Data quality check completed for {csv_file}.\n")
+
