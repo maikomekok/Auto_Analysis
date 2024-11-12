@@ -139,6 +139,34 @@ def check_duplicates(data, csv_file):
     return duplicate_count
 
 
+def aggregate_data_quality_summary(detection_results):
+    total_rows = sum(result['total_rows'] for result in detection_results)
+    total_duplicates = sum(result['duplicates'] for result in detection_results)
+    total_zero_entries = sum(result['zero_entries'] for result in detection_results)
+    total_outliers_and_changes = sum(result['outliers_and_sudden_changes'] for result in detection_results)
+    total_time_outliers = sum(result['time_outliers'] for result in detection_results)
+
+    total_issues = total_duplicates + total_zero_entries + total_outliers_and_changes + total_time_outliers
+    good_data_percentage = ((total_rows - total_issues) / total_rows) * 100 if total_rows > 0 else 0
+    bad_data_percentage = (total_issues / total_rows) * 100 if total_rows > 0 else 0
+
+    summary = {
+        'total_rows': total_rows,
+        'duplicates': total_duplicates,
+        'zero_entries': total_zero_entries,
+        'outliers_and_sudden_changes': total_outliers_and_changes,
+        'time_outliers': total_time_outliers,
+        'total_issues': total_issues,
+        'good_data_percentage': good_data_percentage,
+        'bad_data_percentage': bad_data_percentage
+    }
+   # i decided csv file, but it can be anything
+    summary_df = pd.DataFrame([summary])
+    print("Data quality summary saved to data_quality_summary.csv")
+
+    return summary
+
+
 def run_quality_checks(directory_path):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
 
