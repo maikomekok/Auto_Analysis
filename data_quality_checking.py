@@ -22,10 +22,10 @@ all_volume_cols = bid_volume_cols + ask_volume_cols
 
 def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRESHOLD, sudden_threshold=THRESHOLD,
                              min_change=MIN_CHANGE, window_size=WINDOW_SIZE, min_std=MIN_STD):
+    total_outliers = 0  # Counter for all detected outliers (Z-score or sudden changes)
+
     if price_cols is None:
         price_cols = all_price_cols
-
-    combined_outliers_detected = False
 
     for price_col in price_cols:
         if price_col not in data.columns:
@@ -37,10 +37,11 @@ def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRE
         # Z-Score Outlier Detection
         z_scores = zscore(price_vals)
         z_outliers = np.abs(z_scores) > z_threshold
-        if z_outliers.any():
+        z_outlier_count = z_outliers.sum()  # Count Z-score outliers
+        total_outliers += z_outlier_count  # Add to total outlier count
+        if z_outlier_count > 0:
             indices = np.where(z_outliers)[0]
             print(f"Z-score outliers detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
-            combined_outliers_detected = True
 
         # Sudden Price Change Detection
         if len(price_vals) >= window_size + 1:
@@ -51,19 +52,22 @@ def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRE
             rolling_std[rolling_std < min_std] = np.nan
             standardized_pct_change = pct_changes_series / rolling_std
             sudden_changes = (np.abs(standardized_pct_change) > sudden_threshold) & (
-                    np.abs(pct_changes_series) > min_change)
+                        np.abs(pct_changes_series) > min_change)
 
-            if sudden_changes.any():
+            sudden_change_count = sudden_changes.sum()  # Count sudden price changes
+            total_outliers += sudden_change_count  # Add to total outlier count
+            if sudden_change_count > 0:
                 indices = sudden_changes[sudden_changes].index + 1  # Adjust for shift
-                print(f"Sudden price changes detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
-                combined_outliers_detected = True
+                print(
+                    f"Sudden price changes detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
 
-    if not combined_outliers_detected:
+    # Final summary
+    if total_outliers == 0:
         print(f"No outliers or sudden price changes detected in {csv_file}.")
     else:
-        print(f"Outliers or sudden price changes detected in {csv_file}.")
+        print(f"{total_outliers} total outliers or sudden price changes detected in {csv_file}.")
 
-    return not combined_outliers_detected
+    return total_outliers
 
 
 def detect_time_based_outliers(data, timestamp_col):
