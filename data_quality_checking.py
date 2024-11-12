@@ -167,8 +167,49 @@ def aggregate_data_quality_summary(detection_results):
     return summary
 
 
-def run_quality_checks(directory_path):
+# def run_quality_checks(directory_path):
+#     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+#
+#     for csv_file in csv_files:
+#         file_path = os.path.join(directory_path, csv_file)
+#         data = pd.read_csv(file_path)
+#         data.columns = data.columns.str.strip().str.lower()
+#         print(f"Columns in {csv_file}: {data.columns.tolist()}")
+#         data.fillna(method='ffill', inplace=True)
+#
+#         # Check for duplicates
+#         check_duplicates(data, csv_file)
+#
+#         # Detect and interpolate zero entries
+#         zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
+#         interpolate_zeros(data, all_price_cols)
+#
+#         # Convert date column for time-based checks
+#         if 'date' in data.columns:
+#             run_time_outlier_detection(directory_path, timestamp_col='date')
+#         else:
+#             print(f"Skipping time outliers check for {csv_file} due to missing timestamp column.")
+#
+#         # Detect combined outliers and sudden price changes
+#         detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
+#
+#         print(f"Data quality check completed for {csv_file}.\n")
+
+
+import pandas as pd
+import os
+
+
+def run_quality_checks(directory_path, summary_file='data_quality_summary.csv'):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+    total_rows = 0
+    total_duplicates = 0
+    total_zero_entries = 0
+    total_outliers_and_changes = 0
+    total_time_outliers = 0
+    total_issues = 0
+
+    summary_data = []
 
     for csv_file in csv_files:
         file_path = os.path.join(directory_path, csv_file)
@@ -177,21 +218,62 @@ def run_quality_checks(directory_path):
         print(f"Columns in {csv_file}: {data.columns.tolist()}")
         data.fillna(method='ffill', inplace=True)
 
-        # Check for duplicates
-        check_duplicates(data, csv_file)
+        # Count total rows
+        file_row_count = len(data)
+        total_rows += file_row_count
 
-        # Detect and interpolate zero entries
+        # Run each detection function and collect issue counts
+        duplicates_count = check_duplicates(data, csv_file)
         zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
-        interpolate_zeros(data, all_price_cols)
+        outliers_count = detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
 
-        # Convert date column for time-based checks
+        # Run time-based outlier detection if timestamp column exists
         if 'date' in data.columns:
-            run_time_outlier_detection(directory_path, timestamp_col='date')
+            _, time_outliers = detect_time_based_outliers(data, 'date')
+            time_outliers_count = len(time_outliers) if time_outliers is not None else 0
         else:
-            print(f"Skipping time outliers check for {csv_file} due to missing timestamp column.")
+            time_outliers_count = 0
 
-        # Detect combined outliers and sudden price changes
-        detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
+        # Aggregate counts for this file
+        file_issues = duplicates_count + zero_count + outliers_count + time_outliers_count
+        total_duplicates += duplicates_count
+        total_zero_entries += zero_count
+        total_outliers_and_changes += outliers_count
+        total_time_outliers += time_outliers_count
+        total_issues += file_issues
+
+        # Append per-file summary to summary_data
+        summary_data.append({
+            'file': csv_file,
+            'total_rows': file_row_count,
+            'duplicates': duplicates_count,
+            'zero_entries': zero_count,
+            'outliers_and_sudden_changes': outliers_count,
+            'time_outliers': time_outliers_count,
+            'total_issues': file_issues
+        })
 
         print(f"Data quality check completed for {csv_file}.\n")
 
+    # Calculate overall data quality metrics
+    good_data_count = total_rows - total_issues
+    good_data_percentage = (good_data_count / total_rows) * 100 if total_rows > 0 else 0
+    bad_data_percentage = (total_issues / total_rows) * 100 if total_rows > 0 else 0
+
+    # Append overall summary to summary_data
+    summary_data.append({
+        'file': 'Total',
+        'total_rows': total_rows,
+        'duplicates': total_duplicates,
+        'zero_entries': total_zero_entries,
+        'outliers_and_sudden_changes': total_outliers_and_changes,
+        'time_outliers': total_time_outliers,
+        'total_issues': total_issues,
+        'good_data_percentage': good_data_percentage,
+        'bad_data_percentage': bad_data_percentage
+    })
+
+    # Convert summary data to DataFrame and save as CSV
+    summary_df = pd.DataFrame(summary_data)
+    summary_df.to_csv(summary_file, index=False)
+    print(f"Data quality summary saved to {summary_file}")
