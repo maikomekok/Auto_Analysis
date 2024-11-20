@@ -4,12 +4,12 @@ import numpy as np
 from scipy.stats import zscore
 
 # Define constants
-THRESHOLD = 3              # Threshold for sudden price changes
+THRESHOLD = 6              # Threshold for sudden price changes
 THRESHOLD_MS = 750         # Time difference threshold in milliseconds
-WINDOW_SIZE = 20           # Rolling window size
+WINDOW_SIZE = 50           # Rolling window size
 MIN_STD = 1e-4             # Minimum standard deviation
-MIN_CHANGE = 1000          # Minimum price change
-Z_THRESHOLD = 4         # Z-score threshold for outliers
+MIN_CHANGE = 2000          # Minimum price change
+Z_THRESHOLD = 4            # Z-score threshold for outliers
 
 price_levels = range(1, 21)
 bid_price_cols = [f'bid_prc{level}' for level in price_levels]
@@ -19,17 +19,16 @@ bid_volume_cols = [f'bid_vol{level}' for level in price_levels]
 ask_volume_cols = [f'ask_vol{level}' for level in price_levels]
 all_volume_cols = bid_volume_cols + ask_volume_cols
 
-
 def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRESHOLD, sudden_threshold=THRESHOLD,
                              min_change=MIN_CHANGE, window_size=WINDOW_SIZE, min_std=MIN_STD):
-    total_outliers = 0  # Counter for all detected outliers (Z-score or sudden changes)
+    z_outlier_details = {}
+    sudden_change_details = {}
 
     if price_cols is None:
         price_cols = all_price_cols
 
     for price_col in price_cols:
         if price_col not in data.columns:
-            print(f"Column {price_col} not found in data.")
             continue
 
         price_vals = data[price_col].values
@@ -37,11 +36,9 @@ def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRE
         # Z-Score Outlier Detection
         z_scores = zscore(price_vals)
         z_outliers = np.abs(z_scores) > z_threshold
-        z_outlier_count = z_outliers.sum()  # Count Z-score outliers
-        total_outliers += z_outlier_count  # Add to total outlier count
-        if z_outlier_count > 0:
-            indices = np.where(z_outliers)[0]
-            print(f"Z-score outliers detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
+        z_indices = np.where(z_outliers)[0].tolist()
+        if z_indices:
+            z_outlier_details[price_col] = z_indices
 
         # Sudden Price Change Detection
         if len(price_vals) >= window_size + 1:
@@ -51,37 +48,27 @@ def detect_combined_outliers(data, csv_file, price_cols=None, z_threshold=Z_THRE
             rolling_std = pct_changes_series.rolling(window=window_size, min_periods=1).std().shift(1)
             rolling_std[rolling_std < min_std] = np.nan
             standardized_pct_change = pct_changes_series / rolling_std
-            sudden_changes = (np.abs(standardized_pct_change) > sudden_threshold) & (
-                        np.abs(pct_changes_series) > min_change)
+            sudden_changes = (np.abs(standardized_pct_change) > sudden_threshold) & (np.abs(pct_changes_series) > min_change)
 
-            sudden_change_count = sudden_changes.sum()  # Count sudden price changes
-            total_outliers += sudden_change_count  # Add to total outlier count
-            if sudden_change_count > 0:
-                indices = sudden_changes[sudden_changes].index + 1  # Adjust for shift
-                print(
-                    f"Sudden price changes detected in column {price_col} of {csv_file} at indices {indices.tolist()}.")
+            sudden_indices = (np.where(sudden_changes)[0] + 1).tolist()
+            if sudden_indices:
+                sudden_change_details[price_col] = sudden_indices
 
-    # Final summary
-    if total_outliers == 0:
-        print(f"No outliers or sudden price changes detected in {csv_file}.")
-    else:
-        print(f"{total_outliers} total outliers or sudden price changes detected in {csv_file}.")
+    total_outliers = sum(len(indices) for indices in z_outlier_details.values()) + \
+                     sum(len(indices) for indices in sudden_change_details.values())
 
-    return total_outliers
-
+    return total_outliers, z_outlier_details, sudden_change_details
 
 def detect_time_based_outliers(data, timestamp_col):
     if timestamp_col not in data.columns:
-        print(f"Timestamp column '{timestamp_col}' not found in the data.")
-        return data, None
+        return 0, []
 
     data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
     data = data.sort_values(by=timestamp_col)
     data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 100
-    outliers = data[data['time_diff_ms'] >= THRESHOLD_MS]
-    print(f"Found {len(outliers)} time-based outliers where time difference exceeds {THRESHOLD_MS} milliseconds.")
+    time_outliers = data[data['time_diff_ms'] >= THRESHOLD_MS]
+    return len(time_outliers), time_outliers.index.tolist()
 
-    return data, outliers
 
 
 def interpolate_zeros(data, price_cols):
@@ -113,58 +100,59 @@ def run_time_outlier_detection(directory_path, timestamp_col='date'):
 
 
 def detect_zero_entries_multiple(data, price_cols, volume_cols):
-    zero_entries = pd.Series(False, index=data.index)
+    zero_entries_details = {}
 
+    # Check for zero entries in the specified columns
     for price_col, volume_col in zip(price_cols, volume_cols):
         if price_col not in data.columns or volume_col not in data.columns:
             print(f"Skipping {price_col} and {volume_col} as they are not present in the data.")
             continue
 
+        # Identify rows where both price and volume are zero
         zero_condition = (data[price_col] == 0) & (data[volume_col] == 0)
-        zero_entries = zero_entries | zero_condition
+        if zero_condition.any():
+            zero_indices = data[zero_condition].index.tolist()
+            zero_entries_details[f"{price_col} & {volume_col}"] = zero_indices
 
-    zero_count = zero_entries.sum()
-    print(f"Number of entries where both price and volume are zero in any pair: {zero_count}")
-    return zero_count
+    # Count total zero entries
+    total_zero_count = sum(len(indices) for indices in zero_entries_details.values())
 
+    return total_zero_count, zero_entries_details
 
 def check_duplicates(data, csv_file):
-    data_for_dup_check = data.iloc[:, 1:]  # Select all rows, and all columns except the first one
-
+    data_for_dup_check = data
     duplicates = data_for_dup_check.duplicated(keep=False)
     duplicate_count = duplicates.sum()
-
-    if duplicate_count > 0:
-        print(f"{duplicate_count} duplicate rows found in {csv_file} (excluding the first column).")
-    return duplicate_count
+    duplicate_indices = data[duplicates].index.tolist()
+    return duplicate_count, duplicate_indices
 
 
-def aggregate_data_quality_summary(detection_results):
-    total_rows = sum(result['total_rows'] for result in detection_results)
-    total_duplicates = sum(result['duplicates'] for result in detection_results)
-    total_zero_entries = sum(result['zero_entries'] for result in detection_results)
-    total_outliers_and_changes = sum(result['outliers_and_sudden_changes'] for result in detection_results)
-    total_time_outliers = sum(result['time_outliers'] for result in detection_results)
-
-    total_issues = total_duplicates + total_zero_entries + total_outliers_and_changes + total_time_outliers
-    good_data_percentage = ((total_rows - total_issues) / total_rows) * 100 if total_rows > 0 else 0
-    bad_data_percentage = (total_issues / total_rows) * 100 if total_rows > 0 else 0
-
-    summary = {
-        'total_rows': total_rows,
-        'duplicates': total_duplicates,
-        'zero_entries': total_zero_entries,
-        'outliers_and_sudden_changes': total_outliers_and_changes,
-        'time_outliers': total_time_outliers,
-        'total_issues': total_issues,
-        'good_data_percentage': good_data_percentage,
-        'bad_data_percentage': bad_data_percentage
-    }
-   # i decided csv file, but it can be anything
-    summary_df = pd.DataFrame([summary])
-    print("Data quality summary saved to data_quality_summary.csv")
-
-    return summary
+# def aggregate_data_quality_summary(detection_results):
+#     total_rows = sum(result['total_rows'] for result in detection_results)
+#     total_duplicates = sum(result['duplicates'] for result in detection_results)
+#     total_zero_entries = sum(result['zero_entries'] for result in detection_results)
+#     total_outliers_and_changes = sum(result['outliers_and_sudden_changes'] for result in detection_results)
+#     total_time_outliers = sum(result['time_outliers'] for result in detection_results)
+#
+#     total_issues = total_duplicates + total_zero_entries + total_outliers_and_changes + total_time_outliers
+#     good_data_percentage = ((total_rows - total_issues) / total_rows) * 100 if total_rows > 0 else 0
+#     bad_data_percentage = (total_issues / total_rows) * 100 if total_rows > 0 else 0
+#
+#     summary = {
+#         'total_rows': total_rows,
+#         'duplicates': total_duplicates,
+#         'zero_entries': total_zero_entries,
+#         'outliers_and_sudden_changes': total_outliers_and_changes,
+#         'time_outliers': total_time_outliers,
+#         'total_issues': total_issues,
+#         'good_data_percentage': good_data_percentage,
+#         'bad_data_percentage': bad_data_percentage
+#     }
+#    # i decided csv file, but it can be anything
+#     summary_df = pd.DataFrame([summary])
+#     print("Data quality summary saved to data_quality_summary.csv")
+#
+#     return summary
 
 
 # def run_quality_checks(directory_path):
@@ -194,86 +182,44 @@ def aggregate_data_quality_summary(detection_results):
 #         detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
 #
 #         print(f"Data quality check completed for {csv_file}.\n")
-
-
-import pandas as pd
-import os
-
-
 def run_quality_checks(directory_path, summary_file='data_quality_summary.csv'):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
-    total_rows = 0
-    total_duplicates = 0
-    total_zero_entries = 0
-    total_outliers_and_changes = 0
-    total_time_outliers = 0
-    total_issues = 0
-
     summary_data = []
 
     for csv_file in csv_files:
         file_path = os.path.join(directory_path, csv_file)
         data = pd.read_csv(file_path)
         data.columns = data.columns.str.strip().str.lower()
-        print(f"Columns in {csv_file}: {data.columns.tolist()}")
         data.fillna(method='ffill', inplace=True)
 
-        # Count total rows
-        file_row_count = len(data)
-        total_rows += file_row_count
+        duplicates_count, duplicates_indices = check_duplicates(data, csv_file)
 
-        # Run each detection function and collect issue counts
-        duplicates_count = check_duplicates(data, csv_file)
-        zero_count = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
-        outliers_count = detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
+        zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
 
-        # Run time-based outlier detection if timestamp column exists
+        outliers_count, z_outliers, sudden_changes = detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
+
         if 'date' in data.columns:
-            _, time_outliers = detect_time_based_outliers(data, 'date')
-            time_outliers_count = len(time_outliers) if time_outliers is not None else 0
+            time_outliers_count, time_outliers_indices = detect_time_based_outliers(data, 'date')
         else:
-            time_outliers_count = 0
+            time_outliers_count, time_outliers_indices = 0, []
 
-        # Aggregate counts for this file
-        file_issues = duplicates_count + zero_count + outliers_count + time_outliers_count
-        total_duplicates += duplicates_count
-        total_zero_entries += zero_count
-        total_outliers_and_changes += outliers_count
-        total_time_outliers += time_outliers_count
-        total_issues += file_issues
+        total_issues = duplicates_count + zero_count + outliers_count + time_outliers_count
 
-        # Append per-file summary to summary_data
         summary_data.append({
             'file': csv_file,
-            'total_rows': file_row_count,
+            'total_rows': len(data),
             'duplicates': duplicates_count,
+            'duplicates_indices': duplicates_indices,
             'zero_entries': zero_count,
+            'zero_entries_details': zero_details,
             'outliers_and_sudden_changes': outliers_count,
+            'z_outliers_details': z_outliers,
+            'sudden_changes_details': sudden_changes,
             'time_outliers': time_outliers_count,
-            'total_issues': file_issues
+            'time_outliers_indices': time_outliers_indices,
+            'total_issues': total_issues
         })
 
-        print(f"Data quality check completed for {csv_file}.\n")
-
-    # Calculate overall data quality metrics
-    good_data_count = total_rows - total_issues
-    good_data_percentage = (good_data_count / total_rows) * 100 if total_rows > 0 else 0
-    bad_data_percentage = (total_issues / total_rows) * 100 if total_rows > 0 else 0
-
-    # Append overall summary to summary_data
-    summary_data.append({
-        'file': 'Total',
-        'total_rows': total_rows,
-        'duplicates': total_duplicates,
-        'zero_entries': total_zero_entries,
-        'outliers_and_sudden_changes': total_outliers_and_changes,
-        'time_outliers': total_time_outliers,
-        'total_issues': total_issues,
-        'good_data_percentage': good_data_percentage,
-        'bad_data_percentage': bad_data_percentage
-    })
-
-    # Convert summary data to DataFrame and save as CSV
     summary_df = pd.DataFrame(summary_data)
     summary_df.to_csv(summary_file, index=False)
     print(f"Data quality summary saved to {summary_file}")
