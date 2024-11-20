@@ -6,9 +6,9 @@ from scipy.stats import zscore
 # Define constants
 THRESHOLD = 6              # Threshold for sudden price changes
 THRESHOLD_MS = 750         # Time difference threshold in milliseconds
-WINDOW_SIZE = 50           # Rolling window size
+WINDOW_SIZE = 200           # Rolling window size
 MIN_STD = 1e-4             # Minimum standard deviation
-MIN_CHANGE = 2000          # Minimum price change
+MIN_CHANGE = 50000          # Minimum price change
 Z_THRESHOLD = 4            # Z-score threshold for outliers
 
 price_levels = range(1, 21)
@@ -63,10 +63,11 @@ def detect_time_based_outliers(data, timestamp_col):
     if timestamp_col not in data.columns:
         return 0, []
 
-    data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
+    data[timestamp_col] = pd.to_datetime(data[timestamp_col], format='%H:%M:%S.%fZ', errors='coerce')
     data = data.sort_values(by=timestamp_col)
     data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 100
     time_outliers = data[data['time_diff_ms'] >= THRESHOLD_MS]
+    print(time_outliers)
     return len(time_outliers), time_outliers.index.tolist()
 
 
@@ -185,7 +186,6 @@ def check_duplicates(data, csv_file):
 def run_quality_checks(directory_path, summary_file='data_quality_summary.csv'):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     summary_data = []
-
     for csv_file in csv_files:
         file_path = os.path.join(directory_path, csv_file)
         data = pd.read_csv(file_path)
@@ -195,6 +195,7 @@ def run_quality_checks(directory_path, summary_file='data_quality_summary.csv'):
         duplicates_count, duplicates_indices = check_duplicates(data, csv_file)
 
         zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
+        interpolate_zeros(data, all_price_cols)
 
         outliers_count, z_outliers, sudden_changes = detect_combined_outliers(data, csv_file, price_cols=all_price_cols)
 
