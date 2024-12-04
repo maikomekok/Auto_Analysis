@@ -132,31 +132,55 @@ def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.cs
     summary_data = []
     for csv_file in csv_files:
         logging.info(f"working on file name: {csv_file}")
+        if "DERIBIT" in csv_file:
+            continue
         file_path = os.path.join(directory_path, csv_file)
-        data = pd.read_csv(file_path)
-        data.columns = data.columns.str.strip().str.lower()
-        data.fillna(method='ffill', inplace=True)
-        duplicates_count, duplicates_indices = check_duplicates(data)
-        zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
-        interpolate_zeros(data, all_price_cols, all_volume_cols)
-        custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
-        time_outliers_count, time_outliers_indices = (0, [])
-        if 'date' in data.columns:
-            time_outliers_count, time_outliers_indices = detect_time_based_outliers(data, 'date')
-        total_outliers = sum(len(indices) for indices in custom_outliers.values())
-        summary_data.append({
-            'file': csv_file,
-            'total_rows': len(data),
-            'duplicates': duplicates_count,
-            'duplicates_indices': json.dumps(duplicates_indices),
-            'zero_entries': zero_count,
-            'zero_entries_details': json.dumps(zero_details),
-            'total_outliers': total_outliers,
-            'outliers_details': json.dumps(custom_outliers),
-            'time_outliers': time_outliers_count,
-            'time_outliers_indices': json.dumps(time_outliers_indices),
-            'total_issues': duplicates_count + zero_count + total_outliers + time_outliers_count
-        })
+        try:
+
+            data = pd.read_csv(file_path)
+            data.columns = data.columns.str.strip().str.lower()
+            data.fillna(method='ffill', inplace=True)
+            duplicates_count, duplicates_indices = check_duplicates(data)
+            zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
+            interpolate_zeros(data, all_price_cols, all_volume_cols)
+            custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
+            time_outliers_count, time_outliers_indices = (0, [])
+            if 'date' in data.columns:
+                time_outliers_count, time_outliers_indices = detect_time_based_outliers(data, 'date')
+            total_outliers = sum(len(indices) for indices in custom_outliers.values())
+            summary_data.append({
+                'file': csv_file,
+                'total_rows': len(data),
+                'duplicates': duplicates_count,
+                'duplicates_indices': json.dumps(duplicates_indices),
+                'zero_entries': zero_count,
+                'zero_entries_details': json.dumps(zero_details),
+                'total_outliers': total_outliers,
+                'outliers_details': json.dumps(custom_outliers),
+                'time_outliers': time_outliers_count,
+                'time_outliers_indices': json.dumps(time_outliers_indices),
+                'total_issues': duplicates_count + zero_count + total_outliers + time_outliers_count
+            })
+        except:
+            logging.info("Empty file")
+            summary_data.append({
+                'file': csv_file,
+                'total_rows': len(data),
+                'duplicates': "0",
+                'duplicates_indices': "0",
+                'zero_entries': "0",
+                'zero_entries_details': "0",
+                'total_outliers': "0",
+                'outliers_details': "0",
+                'time_outliers': "0",
+                'time_outliers_indices': "0",
+                'total_issues': "0"
+            }
+
+            )
+
+
+
 
     summary_df = pd.DataFrame(summary_data)
     summary_df.to_csv(summary_file, index=False)

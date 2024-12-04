@@ -1,7 +1,7 @@
 import os
 import sys
 import getopt
-from autoanalysis import Autoanalysis, autoanalysis_of_graphs
+# from autoanalysis import Autoanalysis, autoanalysis_of_graphs
 from data_quality_checking import run_quality_checks
 
 
