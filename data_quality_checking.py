@@ -161,11 +161,11 @@ def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.cs
                 'time_outliers_indices': json.dumps(time_outliers_indices),
                 'total_issues': duplicates_count + zero_count + total_outliers + time_outliers_count
             })
-        except:
+        except pd.errors.EmptyDataError:
             logging.info("Empty file")
             summary_data.append({
                 'file': csv_file,
-                'total_rows': len(data),
+                'total_rows': "0",
                 'duplicates': "0",
                 'duplicates_indices': "0",
                 'zero_entries': "0",
@@ -176,9 +176,9 @@ def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.cs
                 'time_outliers_indices': "0",
                 'total_issues': "0"
             }
-
             )
-
+        except Exception as e:
+            logging.error(f"Error processing file {csv_file}: {e}")
 
 
 
