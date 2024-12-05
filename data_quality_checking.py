@@ -178,7 +178,7 @@ def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.cs
             }
             )
         except Exception as e:
-            logging.error(f"Error processing file {csv_file}: {e}")
+            logging.error(f"Error processing file: {csv_file}: {e}")
 
 
 
