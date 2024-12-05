@@ -3,12 +3,12 @@ import os
 import numpy as np
 import json
 import logging
+import zipfile
 
 logging.basicConfig(level=logging.INFO)
 
-# Adjusted thresholds
 RELATIVE_CHANGE_THRESHOLD = 0.30  # 30%
-ABSOLUTE_CHANGE_THRESHOLD = 5000  # $5,000
+ABSOLUTE_CHANGE_THRESHOLD = 1000  # $5,000
 LOOKBACK_WINDOW = 20
 
 price_levels = range(1, 21)
@@ -93,7 +93,7 @@ def check_duplicates(data):
     duplicate_indices = data[duplicates].index.tolist()
     return duplicate_count, duplicate_indices
 
-def detect_time_based_outliers(data, timestamp_col, threshold_ms=750):
+def detect_time_based_outliers(data, timestamp_col, threshold_ms=800):
     if timestamp_col not in data.columns:
         return 0, []
     data = data.dropna(subset=[timestamp_col])
@@ -103,9 +103,41 @@ def detect_time_based_outliers(data, timestamp_col, threshold_ms=750):
     time_outliers = data[data['time_diff_ms'] >= threshold_ms]
     return len(time_outliers), time_outliers.index.tolist()
 
-def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.csv'):
+
+def split_and_zip_summary(summary_df, output_dir='summary_files', rows_per_file=600,
+                          zip_file_name='summary_archive.zip'):
+
+    os.makedirs(output_dir, exist_ok=True)
+    total_rows = len(summary_df)
+    file_count = 0
+
+    for start in range(0, total_rows, rows_per_file):
+        end = min(start + rows_per_file, total_rows)
+        chunk = summary_df.iloc[start:end]
+        file_name = os.path.join(output_dir, f'summary_part_{file_count + 1}.csv')
+        chunk.to_csv(file_name, index=False)
+        file_count += 1
+        logging.info(f"Created: {file_name}")
+
+    # Create a ZIP file containing all the parts
+    with zipfile.ZipFile(zip_file_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(output_dir):
+            for file in files:
+                zipf.write(os.path.join(root, file), arcname=file)
+                logging.info(f"Added to ZIP: {file}")
+
+    logging.info(f"All files zipped into: {zip_file_name}")
+
+    # Optional: Clean up the individual files after zipping
+    for file in os.listdir(output_dir):
+        os.remove(os.path.join(output_dir, file))
+    os.rmdir(output_dir)
+
+
+def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_data_quality_summary.zip'):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     summary_data = []
+
     for csv_file in csv_files:
         logging.info(f"Working on file name: {csv_file}")
         if "DERIBIT" in csv_file:
@@ -114,37 +146,31 @@ def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.cs
         try:
             data = pd.read_csv(file_path)
             data.columns = data.columns.str.strip().str.lower()
-
-            data_filled = data.copy()
-            data_filled.fillna(method='ffill', inplace=True)
-
-
-            duplicates_count, duplicates_indices = check_duplicates(data_filled)
-            zero_count, zero_details = detect_zero_entries_multiple(data_filled, all_price_cols, all_volume_cols)
-            custom_outliers = custom_btc_outlier_detection(data_filled, all_price_cols, all_volume_cols)
-
+            data.fillna(method='ffill', inplace=True)
+            duplicates_count, duplicates_indices = check_duplicates(data)
+            zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
+            custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
             time_outliers_count, time_outliers_indices = (0, [])
             for ts_col in ['timestamp', 'date', 'time']:
                 if ts_col in data.columns:
-                    time_outliers_count, time_outliers_indices = detect_time_based_outliers(data_filled, ts_col)
+                    time_outliers_count, time_outliers_indices = detect_time_based_outliers(data, ts_col)
                     break
-
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
             total_issues = duplicates_count + zero_count + total_outliers + time_outliers_count
-
-            summary_data.append({
-                'file': csv_file,
-                'total_rows': len(data),
-                'duplicates': duplicates_count,
-                'duplicates_indices': json.dumps(duplicates_indices),
-                'zero_entries': zero_count,
-                'zero_entries_details': json.dumps(zero_details),
-                'total_outliers': total_outliers,
-                'outliers_details': json.dumps(custom_outliers),
-                'time_outliers': time_outliers_count,
-                'time_outliers_indices': json.dumps(time_outliers_indices),
-                'total_issues': total_issues
-            })
+            if total_issues != 0:
+                summary_data.append({
+                    'file': csv_file,
+                    'total_rows': len(data),
+                    'duplicates': duplicates_count,
+                    'duplicates_indices': json.dumps(duplicates_indices),
+                    'zero_entries': zero_count,
+                    'zero_entries_details': json.dumps(zero_details),
+                    'total_outliers': total_outliers,
+                    'outliers_details': json.dumps(custom_outliers),
+                    'time_outliers': time_outliers_count,
+                    'time_outliers_indices': json.dumps(time_outliers_indices),
+                    'total_issues': total_issues
+                })
         except pd.errors.EmptyDataError:
             logging.info("Empty file")
             summary_data.append({
@@ -162,21 +188,12 @@ def run_quality_checks(directory_path, summary_file='btc_data_quality_summary.cs
             })
         except Exception as e:
             logging.error(f"Error processing file {csv_file}: {e}")
-            summary_data.append({
-                'file': csv_file,
-                'total_rows': 0,
-                'duplicates': 0,
-                'duplicates_indices': "[]",
-                'zero_entries': 0,
-                'zero_entries_details': "{}",
-                'total_outliers': 0,
-                'outliers_details': "{}",
-                'time_outliers': 0,
-                'time_outliers_indices': "[]",
-                'total_issues': 0
-            })
+
 
     summary_df = pd.DataFrame(summary_data)
-    summary_df.to_csv(summary_file, index=False)
-    print(f"Data quality summary saved to {summary_file}")
+
+    split_and_zip_summary(summary_df, rows_per_file=rows_per_file, zip_file_name=zip_file_name)
+
+
+
 
