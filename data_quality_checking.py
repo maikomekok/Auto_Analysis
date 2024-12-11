@@ -93,7 +93,7 @@ def check_duplicates(data):
     duplicate_indices = data[duplicates].index.tolist()
     return duplicate_count, duplicate_indices
 
-def detect_time_based_outliers(data, timestamp_col, threshold_ms=800):
+def detect_time_based_outliers(data, timestamp_col, threshold_ms=500):
     if timestamp_col not in data.columns:
         return 0, []
     data = data.dropna(subset=[timestamp_col])
