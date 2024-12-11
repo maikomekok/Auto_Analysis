@@ -91,17 +91,18 @@ def check_duplicates(data):
     duplicates = data.duplicated(keep=False)
     duplicate_count = duplicates.sum()
     duplicate_indices = data[duplicates].index.tolist()
-    return duplicate_count, duplicate_indices
+    return duplicate_count, duplicate_indices,
 
 def detect_time_based_outliers(data, timestamp_col, threshold_ms=500):
     if timestamp_col not in data.columns:
-        return 0, []
+        return 0, [], pd.DataFrame(), pd.DataFrame()
     data = data.dropna(subset=[timestamp_col])
     data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
     data = data.sort_values(by=timestamp_col)
     data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 1000
+    time_differences = data[['time_diff_ms']].copy()
     time_outliers = data[data['time_diff_ms'] >= threshold_ms]
-    return len(time_outliers), time_outliers.index.tolist()
+    return len(time_outliers), time_outliers.index.tolist(), time_differences, time_outliers
 
 
 def split_and_zip_summary(summary_df, output_dir='summary_files', rows_per_file=600,
@@ -119,7 +120,6 @@ def split_and_zip_summary(summary_df, output_dir='summary_files', rows_per_file=
         file_count += 1
         logging.info(f"Created: {file_name}")
 
-    # Create a ZIP file containing all the parts
     with zipfile.ZipFile(zip_file_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for root, _, files in os.walk(output_dir):
             for file in files:
@@ -128,7 +128,6 @@ def split_and_zip_summary(summary_df, output_dir='summary_files', rows_per_file=
 
     logging.info(f"All files zipped into: {zip_file_name}")
 
-    # Optional: Clean up the individual files after zipping
     for file in os.listdir(output_dir):
         os.remove(os.path.join(output_dir, file))
     os.rmdir(output_dir)
@@ -147,30 +146,44 @@ def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_dat
             data = pd.read_csv(file_path)
             data.columns = data.columns.str.strip().str.lower()
             data.fillna(method='ffill', inplace=True)
+
             duplicates_count, duplicates_indices = check_duplicates(data)
             zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
             custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
-            time_outliers_count, time_outliers_indices = (0, [])
+
+            time_outliers_count = 0
+            time_outliers_indices = []
+            time_outliers = pd.DataFrame()
+
             for ts_col in ['timestamp', 'date', 'time']:
                 if ts_col in data.columns:
-                    time_outliers_count, time_outliers_indices = detect_time_based_outliers(data, ts_col)
+                    time_outliers_count, time_outliers_indices, _, time_outliers = detect_time_based_outliers(data, ts_col)
                     break
+
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
             total_issues = duplicates_count + zero_count + total_outliers + time_outliers_count
+
+            summary_entry = {
+                'file': csv_file,
+                'total_rows': len(data),
+                'duplicates': duplicates_count,
+                'duplicates_indices': json.dumps(duplicates_indices),
+                'zero_entries': zero_count,
+                'zero_entries_details': json.dumps(zero_details),
+                'total_outliers': total_outliers,
+                'outliers_details': json.dumps(custom_outliers),
+                'time_outliers': time_outliers_count,
+                'time_outliers_indices': json.dumps(time_outliers_indices),
+                'total_issues': total_issues
+            }
+
+            if time_outliers_count > 0 and 'time_diff_ms' in time_outliers.columns:
+                time_diff_ms_dict = time_outliers['time_diff_ms'].dropna().to_dict()
+                summary_entry['time_outliers_ms'] = json.dumps(time_diff_ms_dict)
+
             if total_issues != 0:
-                summary_data.append({
-                    'file': csv_file,
-                    'total_rows': len(data),
-                    'duplicates': duplicates_count,
-                    'duplicates_indices': json.dumps(duplicates_indices),
-                    'zero_entries': zero_count,
-                    'zero_entries_details': json.dumps(zero_details),
-                    'total_outliers': total_outliers,
-                    'outliers_details': json.dumps(custom_outliers),
-                    'time_outliers': time_outliers_count,
-                    'time_outliers_indices': json.dumps(time_outliers_indices),
-                    'total_issues': total_issues
-                })
+                summary_data.append(summary_entry)
+
         except pd.errors.EmptyDataError:
             logging.info("Empty file")
             summary_data.append({
@@ -186,14 +199,9 @@ def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_dat
                 'time_outliers_indices': "[]",
                 'total_issues': 0
             })
+
         except Exception as e:
             logging.error(f"Error processing file {csv_file}: {e}")
 
-
     summary_df = pd.DataFrame(summary_data)
-
     split_and_zip_summary(summary_df, rows_per_file=rows_per_file, zip_file_name=zip_file_name)
-
-
-
-
