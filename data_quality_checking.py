@@ -1,14 +1,14 @@
 import pandas as pd
 import os
-import numpy as np
 import json
 import logging
-import zipfile
+import tarfile
+import re
 
 logging.basicConfig(level=logging.INFO)
 
-RELATIVE_CHANGE_THRESHOLD = 0.30  # 30%
-ABSOLUTE_CHANGE_THRESHOLD = 1000  # $5,000
+RELATIVE_CHANGE_THRESHOLD = 0.30
+ABSOLUTE_CHANGE_THRESHOLD = 1000
 LOOKBACK_WINDOW = 20
 
 price_levels = range(1, 21)
@@ -91,7 +91,7 @@ def check_duplicates(data):
     duplicates = data.duplicated(keep=False)
     duplicate_count = duplicates.sum()
     duplicate_indices = data[duplicates].index.tolist()
-    return duplicate_count, duplicate_indices,
+    return duplicate_count, duplicate_indices
 
 def detect_time_based_outliers(data, timestamp_col, threshold_ms=500):
     if timestamp_col not in data.columns:
@@ -104,13 +104,12 @@ def detect_time_based_outliers(data, timestamp_col, threshold_ms=500):
     time_outliers = data[data['time_diff_ms'] >= threshold_ms]
     return len(time_outliers), time_outliers.index.tolist(), time_differences, time_outliers
 
-
-def split_and_zip_summary(summary_df, output_dir='summary_files', rows_per_file=600,
-                          zip_file_name='summary_archive.zip'):
-
+def split_and_tar_summary(summary_df, rows_per_file=600, tar_file_name='summary_archive.tar.gz'):
+    output_dir = 'summary_files'
     os.makedirs(output_dir, exist_ok=True)
     total_rows = len(summary_df)
     file_count = 0
+    file_names = []
 
     for start in range(0, total_rows, rows_per_file):
         end = min(start + rows_per_file, total_rows)
@@ -119,21 +118,28 @@ def split_and_zip_summary(summary_df, output_dir='summary_files', rows_per_file=
         chunk.to_csv(file_name, index=False)
         file_count += 1
         logging.info(f"Created: {file_name}")
+        file_names.append(file_name)
 
-    with zipfile.ZipFile(zip_file_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(output_dir):
-            for file in files:
-                zipf.write(os.path.join(root, file), arcname=file)
-                logging.info(f"Added to ZIP: {file}")
+    with tarfile.open(tar_file_name, 'w:gz') as tar:
+        for fn in file_names:
+            tar.add(fn, arcname=os.path.basename(fn))
+            logging.info(f"Added to TAR.GZ: {fn}")
 
-    logging.info(f"All files zipped into: {zip_file_name}")
+    logging.info(f"All files compressed into: {tar_file_name}")
 
-    for file in os.listdir(output_dir):
-        os.remove(os.path.join(output_dir, file))
+    for fn in file_names:
+        os.remove(fn)
     os.rmdir(output_dir)
 
+def identify_exchange_code(filename):
+    base = os.path.basename(filename)
+    match = re.search(r'_(\d+)\.csv$', base)
+    print(match)
+    if match:
+        return match.group(1)
+    return None
 
-def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_data_quality_summary.zip'):
+def run_quality_checks(directory_path, rows_per_file=600):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     summary_data = []
 
@@ -163,8 +169,11 @@ def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_dat
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
             total_issues = duplicates_count + zero_count + total_outliers + time_outliers_count
 
+            exchange_code = identify_exchange_code(csv_file)
+
             summary_entry = {
                 'file': csv_file,
+                'exchange_code': exchange_code,
                 'total_rows': len(data),
                 'duplicates': duplicates_count,
                 'duplicates_indices': json.dumps(duplicates_indices),
@@ -186,8 +195,10 @@ def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_dat
 
         except pd.errors.EmptyDataError:
             logging.info("Empty file")
+            exchange_code = identify_exchange_code(csv_file)
             summary_data.append({
                 'file': csv_file,
+                'exchange_code': exchange_code,
                 'total_rows': 0,
                 'duplicates': 0,
                 'duplicates_indices': "[]",
@@ -199,9 +210,33 @@ def run_quality_checks(directory_path, rows_per_file=600, zip_file_name='btc_dat
                 'time_outliers_indices': "[]",
                 'total_issues': 0
             })
-
         except Exception as e:
             logging.error(f"Error processing file {csv_file}: {e}")
 
     summary_df = pd.DataFrame(summary_data)
-    split_and_zip_summary(summary_df, rows_per_file=rows_per_file, zip_file_name=zip_file_name)
+
+    created_tar_files = []
+    if not summary_df.empty and 'exchange_code' in summary_df.columns:
+        unique_codes = summary_df['exchange_code'].dropna().unique()
+        for code in unique_codes:
+            exch_df = summary_df[summary_df['exchange_code'] == code].copy()
+            tar_file_name = f'btc_data_quality_summary_{code}.tar.gz'
+            split_and_tar_summary(exch_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
+            created_tar_files.append(tar_file_name)
+    else:
+        if not summary_df.empty:
+            tar_file_name = 'btc_data_quality_summary.tar.gz'
+            split_and_tar_summary(summary_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
+            created_tar_files.append(tar_file_name)
+
+    if created_tar_files:
+        master_tar_name = 'all_btc_data_quality_summaries.tar.gz'
+        with tarfile.open(master_tar_name, 'w:gz') as master_tar:
+            for tf in created_tar_files:
+                master_tar.add(tf)
+                logging.info(f"Added {tf} to {master_tar_name}")
+
+        for tf in created_tar_files:
+             os.remove(tf)
+
+        logging.info(f"All exchange tar.gz files combined into {master_tar_name}")
