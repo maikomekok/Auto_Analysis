@@ -180,8 +180,15 @@ def run_quality_checks(directory_path, rows_per_file=600):
 
             for ts_col in ['timestamp', 'date', 'time']:
                 if ts_col in data.columns:
-                    time_outliers_count, time_outliers_indices, _, time_outliers = detect_time_based_outliers(data, ts_col)
+                    time_outliers_count, time_outliers_indices, _, time_outliers, _ = detect_time_based_outliers(data,
+                                                                                                                 ts_col)
                     break
+            """ detect_time_based_outliers returns:
+            1. Count of time-based outliers
+            2. Indices of time-based outliers
+            3. DataFrame with time differences
+            4. DataFrame with time outliers
+            5. Average time difference (in milliseconds) """
 
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
             total_issues = duplicates_count + zero_count + total_outliers + time_outliers_count
