@@ -93,16 +93,18 @@ def check_duplicates(data):
     duplicate_indices = data[duplicates].index.tolist()
     return duplicate_count, duplicate_indices
 
-def detect_time_based_outliers(data, timestamp_col, threshold_ms=500):
+def detect_time_based_outliers(data, timestamp_col, threshold_ms=300):
     if timestamp_col not in data.columns:
-        return 0, [], pd.DataFrame(), pd.DataFrame()
+        return 0, [], pd.DataFrame(), pd.DataFrame(), None
     data = data.dropna(subset=[timestamp_col])
     data[timestamp_col] = pd.to_datetime(data[timestamp_col], errors='coerce')
     data = data.sort_values(by=timestamp_col)
     data['time_diff_ms'] = data[timestamp_col].diff().dt.total_seconds() * 1000
     time_differences = data[['time_diff_ms']].copy()
     time_outliers = data[data['time_diff_ms'] >= threshold_ms]
-    return len(time_outliers), time_outliers.index.tolist(), time_differences, time_outliers
+    average_time_diff = data['time_diff_ms'].mean()  # Calculate the average time difference
+    return len(time_outliers), time_outliers.index.tolist(), time_differences, time_outliers, average_time_diff
+
 
 def split_and_tar_summary(summary_df, rows_per_file=600, tar_file_name='summary_archive.tar.gz'):
     output_dir = 'summary_files'
@@ -163,7 +165,8 @@ def run_quality_checks(directory_path, rows_per_file=600):
 
             for ts_col in ['timestamp', 'date', 'time']:
                 if ts_col in data.columns:
-                    time_outliers_count, time_outliers_indices, _, time_outliers = detect_time_based_outliers(data, ts_col)
+                    (time_outliers_count, time_outliers_indices,
+                     _, time_outliers, avg_time_diff) = detect_time_based_outliers(data, ts_col)
                     break
 
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
@@ -183,6 +186,7 @@ def run_quality_checks(directory_path, rows_per_file=600):
                 'outliers_details': json.dumps(custom_outliers),
                 'time_outliers': time_outliers_count,
                 'time_outliers_indices': json.dumps(time_outliers_indices),
+                'average_time_diff_ms': avg_time_diff,
                 'total_issues': total_issues
             }
 
@@ -208,6 +212,7 @@ def run_quality_checks(directory_path, rows_per_file=600):
                 'outliers_details': "{}",
                 'time_outliers': 0,
                 'time_outliers_indices': "[]",
+                'average_time_diff_ms': avg_time_diff,
                 'total_issues': 0
             })
         except Exception as e:
