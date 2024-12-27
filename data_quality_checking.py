@@ -20,6 +20,14 @@ ask_volume_cols = [f'ask_vol{level}' for level in price_levels]
 all_volume_cols = bid_volume_cols + ask_volume_cols
 MAX_VALID_PRICE = 1e9
 
+
+def extract_date_from_filename(filename):
+    match = re.match(r'^(\d{4}-\d{2}-\d{2})', filename)
+    if match:
+        return match.group(1)
+    return None
+
+
 def is_valid_price(price, last_valid_price=None, relative_threshold=RELATIVE_CHANGE_THRESHOLD):
     try:
         price_float = float(price)
