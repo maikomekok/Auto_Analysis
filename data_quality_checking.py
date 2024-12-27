@@ -153,6 +153,13 @@ def run_quality_checks(directory_path, rows_per_file=600):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     summary_data = []
 
+    # Extract date from the first file for naming
+    first_date = None
+    if csv_files:
+        first_date = extract_date_from_filename(csv_files[0])
+    if not first_date:
+        first_date = "unknown_date"
+
     for csv_file in csv_files:
         logging.info(f"Working on file name: {csv_file}")
         if "DERIBIT" in csv_file:
@@ -173,8 +180,7 @@ def run_quality_checks(directory_path, rows_per_file=600):
 
             for ts_col in ['timestamp', 'date', 'time']:
                 if ts_col in data.columns:
-                    (time_outliers_count, time_outliers_indices,
-                     _, time_outliers, avg_time_diff) = detect_time_based_outliers(data, ts_col)
+                    time_outliers_count, time_outliers_indices, _, time_outliers = detect_time_based_outliers(data, ts_col)
                     break
 
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
@@ -194,7 +200,6 @@ def run_quality_checks(directory_path, rows_per_file=600):
                 'outliers_details': json.dumps(custom_outliers),
                 'time_outliers': time_outliers_count,
                 'time_outliers_indices': json.dumps(time_outliers_indices),
-                'average_time_diff_ms': avg_time_diff,
                 'total_issues': total_issues
             }
 
@@ -220,7 +225,6 @@ def run_quality_checks(directory_path, rows_per_file=600):
                 'outliers_details': "{}",
                 'time_outliers': 0,
                 'time_outliers_indices': "[]",
-                'average_time_diff_ms': avg_time_diff,
                 'total_issues': 0
             })
         except Exception as e:
@@ -243,7 +247,7 @@ def run_quality_checks(directory_path, rows_per_file=600):
             created_tar_files.append(tar_file_name)
 
     if created_tar_files:
-        master_tar_name = 'all_btc_data_quality_summaries.tar.gz'
+        master_tar_name = f'{first_date}_btc_data_quality_summaries.tar.gz'
         with tarfile.open(master_tar_name, 'w:gz') as master_tar:
             for tf in created_tar_files:
                 master_tar.add(tf)
