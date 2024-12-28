@@ -244,12 +244,12 @@ def run_quality_checks(directory_path, rows_per_file=600):
         unique_codes = summary_df['exchange_code'].dropna().unique()
         for code in unique_codes:
             exch_df = summary_df[summary_df['exchange_code'] == code].copy()
-            tar_file_name = f'btc_data_quality_summary_{code}.tar.gz'
+            tar_file_name = f'{first_date}btc_data_quality_summary_{code}.tar.gz'
             split_and_tar_summary(exch_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
             created_tar_files.append(tar_file_name)
     else:
         if not summary_df.empty:
-            tar_file_name = 'btc_data_quality_summary.tar.gz'
+            tar_file_name = f'{first_date}btc_data_quality_summary.tar.gz'
             split_and_tar_summary(summary_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
             created_tar_files.append(tar_file_name)
 
