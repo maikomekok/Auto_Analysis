@@ -149,7 +149,7 @@ def identify_exchange_code(filename):
         return match.group(1)
     return None
 
-def run_quality_checks(directory_path, rows_per_file=600):
+def run_quality_checks(directory_path,output_path ,rows_per_file=600):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     summary_data = []
 
