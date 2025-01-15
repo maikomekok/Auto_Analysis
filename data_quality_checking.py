@@ -118,29 +118,20 @@ def split_and_tar_summary(summary_df, rows_per_file=600, tar_file_name='summary_
     output_dir = 'summary_files'
     os.makedirs(output_dir, exist_ok=True)
     total_rows = len(summary_df)
-    file_count = 0
-    file_names = []
 
-    for start in range(0, total_rows, rows_per_file):
-        end = min(start + rows_per_file, total_rows)
-        chunk = summary_df.iloc[start:end]
-        file_name = os.path.join(output_dir, f'summary_part_{file_count + 1}.csv')
-        chunk.to_csv(file_name, index=False)
-        file_count += 1
-        logging.info(f"Created: {file_name}")
-        file_names.append(file_name)
+    for i in range(0, total_rows, rows_per_file):
+        chunk = summary_df.iloc[i:i+rows_per_file]
+        chunk_file = os.path.join(output_dir, f'summary_part_{i // rows_per_file + 1}.csv')
+        chunk.to_csv(chunk_file, index=False)
 
     with tarfile.open(tar_file_name, 'w:gz') as tar:
-        for fn in file_names:
-            tar.add(fn, arcname=os.path.basename(fn))
-            logging.info(f"Added to TAR.GZ: {fn}")
+        for file in os.listdir(output_dir):
+            tar.add(os.path.join(output_dir, file), arcname=file)
 
-    logging.info(f"All files compressed into: {tar_file_name}")
-
-    for fn in file_names:
-        os.remove(fn)
+    for file in os.listdir(output_dir):
+        os.remove(os.path.join(output_dir, file))
     os.rmdir(output_dir)
-
+    logging.info(f"All files compressed into: {tar_file_name}")
 def identify_exchange_code(filename):
     base = os.path.basename(filename)
     match = re.search(r'_(\d+)\.csv$', base)
@@ -149,16 +140,11 @@ def identify_exchange_code(filename):
         return match.group(1)
     return None
 
-def run_quality_checks(directory_path,output_path ,rows_per_file=600):
+def run_quality_checks(directory_path, output_path, rows_per_file=600):
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     summary_data = []
 
-    # Extract date from the first file for naming
-    first_date = None
-    if csv_files:
-        first_date = extract_date_from_filename(csv_files[0])
-    if not first_date:
-        first_date = "unknown_date"
+    first_date = extract_date_from_filename(csv_files[0]) if csv_files else datetime.now().strftime('%Y-%m-%d')
 
     for csv_file in csv_files:
         logging.info(f"Working on file name: {csv_file}")
@@ -174,24 +160,8 @@ def run_quality_checks(directory_path,output_path ,rows_per_file=600):
             zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
             custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
 
-            time_outliers_count = 0
-            time_outliers_indices = []
-            time_outliers = pd.DataFrame()
-
-            for ts_col in ['timestamp', 'date', 'time']:
-                if ts_col in data.columns:
-                    time_outliers_count, time_outliers_indices, _, time_outliers, _ = detect_time_based_outliers(data,
-                                                                                                                 ts_col)
-                    break
-            """ detect_time_based_outliers returns:
-            1. Count of time-based outliers
-            2. Indices of time-based outliers
-            3. DataFrame with time differences
-            4. DataFrame with time outliers
-            5. Average time difference (in milliseconds) """
-
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
-            total_issues = duplicates_count + zero_count + total_outliers + time_outliers_count
+            total_issues = duplicates_count + zero_count + total_outliers
 
             exchange_code = identify_exchange_code(csv_file)
 
@@ -205,14 +175,8 @@ def run_quality_checks(directory_path,output_path ,rows_per_file=600):
                 'zero_entries_details': json.dumps(zero_details),
                 'total_outliers': total_outliers,
                 'outliers_details': json.dumps(custom_outliers),
-                'time_outliers': time_outliers_count,
-                'time_outliers_indices': json.dumps(time_outliers_indices),
                 'total_issues': total_issues
             }
-
-            if time_outliers_count > 0 and 'time_diff_ms' in time_outliers.columns:
-                time_diff_ms_dict = time_outliers['time_diff_ms'].dropna().to_dict()
-                summary_entry['time_outliers_ms'] = json.dumps(time_diff_ms_dict)
 
             if total_issues != 0:
                 summary_data.append(summary_entry)
@@ -230,8 +194,6 @@ def run_quality_checks(directory_path,output_path ,rows_per_file=600):
                 'zero_entries_details': "{}",
                 'total_outliers': 0,
                 'outliers_details': "{}",
-                'time_outliers': 0,
-                'time_outliers_indices': "[]",
                 'total_issues': 0
             })
         except Exception as e:
@@ -239,28 +201,10 @@ def run_quality_checks(directory_path,output_path ,rows_per_file=600):
 
     summary_df = pd.DataFrame(summary_data)
 
-    created_tar_files = []
-    if not summary_df.empty and 'exchange_code' in summary_df.columns:
-        unique_codes = summary_df['exchange_code'].dropna().unique()
-        for code in unique_codes:
-            exch_df = summary_df[summary_df['exchange_code'] == code].copy()
-            tar_file_name = f'{first_date}btc_data_quality_summary_{code}.tar.gz'
-            split_and_tar_summary(exch_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
-            created_tar_files.append(tar_file_name)
-    else:
-        if not summary_df.empty:
-            tar_file_name = f'{first_date}btc_data_quality_summary.tar.gz'
-            split_and_tar_summary(summary_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
-            created_tar_files.append(tar_file_name)
+    if not summary_df.empty:
+        tar_file_name = os.path.join(output_path, f'{first_date}_btc_data_quality_summary.tar.gz')
+        split_and_tar_summary(summary_df, rows_per_file=rows_per_file, tar_file_name=tar_file_name)
+        logging.info(f"Summary saved to {tar_file_name}")
 
-    if created_tar_files:
-        master_tar_name = f'{first_date}_btc_data_quality_summaries.tar.gz'
-        with tarfile.open(master_tar_name, 'w:gz') as master_tar:
-            for tf in created_tar_files:
-                master_tar.add(tf)
-                logging.info(f"Added {tf} to {master_tar_name}")
 
-        for tf in created_tar_files:
-             os.remove(tf)
 
-        logging.info(f"All exchange tar.gz files combined into {master_tar_name}")
