@@ -263,6 +263,12 @@ def split_and_tar_summary(summary_df,
 
     # Clean up the temporary chunk files
     cleanup_directory(temp_summary_dir)
+    try:
+        os.rmdir(temp_summary_dir)
+        logging.info(f"Removed empty directory: {temp_summary_dir}")
+    except OSError as e:
+        logging.warning(f"Could not remove directory {temp_summary_dir}: {e}")
+
     logging.info(f"Summary archive created at: {tar_file_name}")
 
 
@@ -422,21 +428,22 @@ def process_daily_data(input_folder, output_folder):
         # 2. Run quality checks (creates tar.gz summary per exchange_code)
         run_quality_checks(input_folder, output_folder)
 
-        # 3. Create a daily “master” summary archive from everything in output_folder
-        date_str = extract_date_from_filename(tar_file)
-        daily_archive = os.path.join(output_folder, f'{date_str}_summary.tar.gz')
-
-        # Avoid adding the daily archive to itself if it already exists
-        with tarfile.open(daily_archive, 'w:gz') as tar:
-            for root, dirs, files in os.walk(output_folder):
-                for file_ in files:
-                    file_path = os.path.join(root, file_)
-                    # Skip if it’s the daily archive
-                    if file_path == daily_archive:
-                        continue
-                    tar.add(file_path, arcname=file_)
-        logging.info(f"Daily summary archive created at: {daily_archive}")
+        # # 3. Create a daily “master” summary archive from everything in output_folder
+        # date_str = extract_date_from_filename(tar_file)
+        # daily_archive = os.path.join(output_folder, f'{date_str}_summary.tar.gz')
+        #
+        # # Avoid adding the daily archive to itself if it already exists
+        # with tarfile.open(daily_archive, 'w:gz') as tar:
+        #     for root, dirs, files in os.walk(output_folder):
+        #         for file_ in files:
+        #             file_path = os.path.join(root, file_)
+        #             # Skip if it’s the daily archive
+        #             if file_path == daily_archive:
+        #                 continue
+        #             tar.add(file_path, arcname=file_)
+        # logging.info(f"Daily summary archive created at: {daily_archive}")
 
         # 4. Clean up processed .tar.gz file from input_folder (optional).
-        os.remove(tar_file_path)
+        # os.remove(tar_file_path)
+        cleanup_directory(input_folder)
         logging.info(f"Deleted processed .tar.gz file: {tar_file_path}")
