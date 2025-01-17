@@ -2,7 +2,7 @@ import os
 import sys
 import getopt
 from datetime import datetime
-from data_quality_checking import run_quality_checks
+from data_quality_checking import process_daily_data  # Changed from run_quality_checks
 
 def main(input_path, summary_path, mode):
     # Ensure the summary directory exists
@@ -15,7 +15,7 @@ def main(input_path, summary_path, mode):
     # Execute based on the selected mode
     if mode == "quality_check":
         print(f"Running Data Quality Check on data in {input_path}...")
-        run_quality_checks(input_path, daily_folder)
+        process_daily_data(input_path, daily_folder)  # Updated function call
     else:
         print(f"Unknown mode: {mode}. Use --help for usage instructions.")
 
@@ -24,7 +24,7 @@ def print_help():
     Usage: main.py [options]
 
     Options:
-    -i, --input     Path to the input directory with CSV files
+    -i, --input     Path to the input directory with .tar.gz files
     -s, --summary   Path to the directory for saving summary files (default: ./summaries)
     -m, --mode      Mode of operation: 'quality_check' (default: quality_check)
     -h, --help      Display this help message
