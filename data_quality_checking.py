@@ -227,7 +227,7 @@ def cleanup_directory(directory_path):
 
 
 def split_and_tar_summary(summary_df,
-                          rows_per_file=600,
+                          rows_per_file=1000,
                           tar_file_name='summary_archive.tar.gz'):
     """
     Splits 'summary_df' into chunks of size 'rows_per_file' and writes them to CSV.
@@ -324,23 +324,29 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
 
             # 4. Time-based outliers (NEW)
             #    Update 'timestamp_col' to match your CSV if it's not 'timestamp'.
-            time_outlier_count, time_outlier_indices, _, _, average_time_diff = \
-                detect_time_based_outliers(data, timestamp_col='timestamp', threshold_ms=300)
+
+            time_outliers_count = 0
+            time_outliers_indices = []
+            time_outliers = pd.DataFrame()
+            for ts_col in ['timestamp', 'date', 'time']:
+                if ts_col in data.columns:
+                    time_outliers_count, time_outliers_indices, _, time_outliers = detect_time_based_outliers(data, ts_col)
+                    break
+
 
             # Sum up total issues (optional)
             total_issues = (
                 duplicates_count
                 + zero_count
                 + total_outliers
-                + time_outlier_count
+                + time_outliers_count
             )
 
             exchange_code = identify_exchange_code(csv_file)
             logging.info(f"Identified exchange code for {csv_file}: {exchange_code}")
 
             # Only store in summary if any issues
-            if total_issues != 0:
-                summary_entry = {
+            summary_entry = {
                     'file': csv_file,
                     'exchange_code': exchange_code,
                     'total_rows': len(data),
@@ -350,18 +356,20 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
                     'zero_entries_details': json.dumps(zero_details),
                     'custom_price_outliers': total_outliers,
                     'outliers_details': json.dumps(custom_outliers),
-                    'time_outliers': time_outlier_count,
-                    'time_outlier_indices': json.dumps(time_outlier_indices),
+                    'time_outliers': time_outliers_count,
+                    'time_outliers_indices': json.dumps(time_outliers_indices),
                     'avg_time_diff_ms': average_time_diff,
                     'total_issues': total_issues
                 }
+            if total_issues != 0:
                 summary_data.append(summary_entry)
 
         except pd.errors.EmptyDataError:
             logging.warning(f"Empty file detected: {csv_file}")
+            exchange_code = identify_exchange_code(csv_file)
             summary_data.append({
                 'file': csv_file,
-                'exchange_code': None,
+                'exchange_code': exchange_code,
                 'total_rows': 0,
                 'duplicates': 0,
                 'duplicates_indices': [],
@@ -378,13 +386,10 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
         except Exception as e:
             logging.error(f"Error processing file {csv_file}: {e}")
 
-    # If we found any issues overall, group by exchange_code and archive them
-    if summary_data:
         summary_df = pd.DataFrame(summary_data)
         grouped = summary_df.groupby('exchange_code')
 
         for exchange_code, group_df in grouped:
-            # If 'exchange_code' is None, skip or handle separately
             if not exchange_code:
                 exchange_code = "UNKNOWN"
 
