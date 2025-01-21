@@ -12,7 +12,6 @@ logging.basicConfig(level=logging.INFO)
 RELATIVE_CHANGE_THRESHOLD = 0.30
 ABSOLUTE_CHANGE_THRESHOLD = 1000
 LOOKBACK_WINDOW = 20
-
 MAX_VALID_PRICE = 1e9
 
 price_levels = range(1, 21)
@@ -24,6 +23,7 @@ bid_volume_cols = [f'bid_vol{i}' for i in price_levels]
 ask_volume_cols = [f'ask_vol{i}' for i in price_levels]
 all_volume_cols = bid_volume_cols + ask_volume_cols
 
+
 def is_valid_price(price,
                    last_valid_price=None,
                    relative_threshold=RELATIVE_CHANGE_THRESHOLD,
@@ -31,8 +31,8 @@ def is_valid_price(price,
     """
     Determines whether a given 'price' is valid.
       - Must be a positive float >= 10.0 and < MAX_VALID_PRICE.
-      - Relative change (vs. last_valid_price) must be below 'relative_threshold' (30% by default).
-      - Absolute change (vs. last_valid_price) must be below 'absolute_threshold' (1000 by default).
+      - Relative change (vs. last_valid_price) must be below 'relative_threshold'.
+      - Absolute change must be below 'absolute_threshold'.
     """
     try:
         price_float = float(price)
@@ -107,9 +107,12 @@ def custom_btc_outlier_detection(data, price_cols, volume_cols,
                 continue
 
             # Check the price validity
-            if not is_valid_price(current_price, last_valid_price,
-                                  relative_change_threshold,
-                                  absolute_change_threshold):
+            if not is_valid_price(
+                    current_price,
+                    last_valid_price,
+                    relative_change_threshold,
+                    absolute_change_threshold
+            ):
                 outlier_indices.append(i)
                 continue
 
@@ -214,7 +217,8 @@ def identify_exchange_code(filename):
 
 def cleanup_directory(directory_path):
     """
-    Deletes all files and empty subdirectories under 'directory_path'.
+    Deletes all files and empty subdirectories under 'directory_path',
+    then removes directory_path itself if empty.
     """
     for root, dirs, files in os.walk(directory_path, topdown=False):
         for file in files:
@@ -223,6 +227,13 @@ def cleanup_directory(directory_path):
         for dir_ in dirs:
             dir_path = os.path.join(root, dir_)
             os.rmdir(dir_path)
+
+    try:
+        os.rmdir(directory_path)
+        logging.info(f"Removed empty directory: {directory_path}")
+    except OSError:
+        pass
+
     logging.info(f"Cleaned up directory: {directory_path}")
 
 
@@ -243,6 +254,7 @@ def split_and_tar_summary(summary_df,
     os.makedirs(temp_summary_dir, exist_ok=True)
 
     total_rows = len(summary_df)
+    logging.info(f"Preparing to split {total_rows} rows into chunks of {rows_per_file}.")
 
     # Write chunked CSV files
     part_number = 0
@@ -263,12 +275,6 @@ def split_and_tar_summary(summary_df,
 
     # Clean up the temporary chunk files
     cleanup_directory(temp_summary_dir)
-    try:
-        os.rmdir(temp_summary_dir)
-        logging.info(f"Removed empty directory: {temp_summary_dir}")
-    except OSError as e:
-        logging.warning(f"Could not remove directory {temp_summary_dir}: {e}")
-
     logging.info(f"Summary archive created at: {tar_file_name}")
 
 
@@ -278,7 +284,7 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
       - Duplicates
       - Zero price/volume
       - Custom outlier detection
-      - Time-based outliers (optional)
+      - Time-based outliers (on the first recognized timestamp column)
     Skips files containing 'DERIBIT' in the path.
     Summarizes issues into a DataFrame and then archives by 'exchange_code'.
     """
@@ -308,10 +314,9 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
             data = pd.read_csv(csv_file)
             # Standardize column names
             data.columns = data.columns.str.strip().str.lower()
-            # Forward fill to handle missing data (if that’s your desired behavior)
+            # Forward fill to handle missing data
             data.fillna(method='ffill', inplace=True)
 
-            # -------------------------------------------------
             # 1. Check duplicates
             duplicates_count, duplicates_indices = check_duplicates(data)
 
@@ -322,31 +327,37 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
             custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
 
-            # 4. Time-based outliers (NEW)
-            #    Update 'timestamp_col' to match your CSV if it's not 'timestamp'.
-
+            # 4. Time-based outliers
+            # We'll check for 'timestamp', 'date', or 'time' columns in that order.
             time_outliers_count = 0
             time_outliers_indices = []
-            time_outliers = pd.DataFrame()
+            average_time_diff = None
+
             for ts_col in ['timestamp', 'date', 'time']:
                 if ts_col in data.columns:
-                    time_outliers_count, time_outliers_indices, _, time_outliers = detect_time_based_outliers(data, ts_col)
+                    (time_outliers_count,
+                     time_outliers_indices,
+                     _,
+                     _,
+                     average_time_diff) = detect_time_based_outliers(data, ts_col)
                     break
 
-
-            # Sum up total issues (optional)
+            # Sum up total issues
             total_issues = (
-                duplicates_count
-                + zero_count
-                + total_outliers
-                + time_outliers_count
+                    duplicates_count
+                    + zero_count
+                    + total_outliers
+                    + time_outliers_count
             )
 
             exchange_code = identify_exchange_code(csv_file)
             logging.info(f"Identified exchange code for {csv_file}: {exchange_code}")
 
-            # Only store in summary if any issues
-            summary_entry = {
+            # If you want to include ONLY files with issues OR truly empty files, do:
+            #   if (len(data) == 0) or (total_issues != 0):
+            # Otherwise, if you want to log everything, remove this condition
+            if total_issues != 0 or len(data) == 0:
+                summary_entry = {
                     'file': csv_file,
                     'exchange_code': exchange_code,
                     'total_rows': len(data),
@@ -361,10 +372,10 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
                     'avg_time_diff_ms': average_time_diff,
                     'total_issues': total_issues
                 }
-            if total_issues != 0:
                 summary_data.append(summary_entry)
 
         except pd.errors.EmptyDataError:
+            # Means the CSV is truly empty (no headers, etc.)
             logging.warning(f"Empty file detected: {csv_file}")
             exchange_code = identify_exchange_code(csv_file)
             summary_data.append({
@@ -372,13 +383,13 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
                 'exchange_code': exchange_code,
                 'total_rows': 0,
                 'duplicates': 0,
-                'duplicates_indices': [],
+                'duplicates_indices': json.dumps([]),
                 'zero_entries': 0,
-                'zero_entries_details': {},
+                'zero_entries_details': json.dumps({}),
                 'custom_price_outliers': 0,
-                'outliers_details': {},
+                'outliers_details': json.dumps({}),
                 'time_outliers': 0,
-                'time_outlier_indices': [],
+                'time_outliers_indices': json.dumps([]),
                 'avg_time_diff_ms': None,
                 'total_issues': 0
             })
@@ -386,6 +397,8 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
         except Exception as e:
             logging.error(f"Error processing file {csv_file}: {e}")
 
+    # After processing ALL CSVs, group and create archives if there's anything in summary_data
+    if summary_data:
         summary_df = pd.DataFrame(summary_data)
         grouped = summary_df.groupby('exchange_code')
 
@@ -415,8 +428,8 @@ def process_daily_data(input_folder, output_folder):
     High-level workflow:
       1. Find .tar.gz files in 'input_folder'.
       2. Extract each archive, then run quality checks on the extracted CSVs.
-      3. Create a daily summary archive from 'output_folder' contents.
-      4. (Optionally) clean up old artifacts or the processed tar file.
+      3. (Optionally) create a daily summary archive from 'output_folder' contents.
+      4. Clean up the extracted .tar.gz or input folder if needed.
     """
     tar_files = [f for f in os.listdir(input_folder) if f.endswith('.tar.gz')]
     if not tar_files:
@@ -430,25 +443,24 @@ def process_daily_data(input_folder, output_folder):
         # 1. Extract tar.gz
         extract_tar_gz(tar_file_path, input_folder)
 
-        # 2. Run quality checks (creates tar.gz summary per exchange_code)
+        # 2. lolll,,,, Run quality checks (creates tar.gz summary per exchange_code)
         run_quality_checks(input_folder, output_folder)
 
-        # # 3. Create a daily “master” summary archive from everything in output_folder
         # date_str = extract_date_from_filename(tar_file)
         # daily_archive = os.path.join(output_folder, f'{date_str}_summary.tar.gz')
-        #
-        # # Avoid adding the daily archive to itself if it already exists
         # with tarfile.open(daily_archive, 'w:gz') as tar:
         #     for root, dirs, files in os.walk(output_folder):
         #         for file_ in files:
         #             file_path = os.path.join(root, file_)
-        #             # Skip if it’s the daily archive
         #             if file_path == daily_archive:
         #                 continue
         #             tar.add(file_path, arcname=file_)
         # logging.info(f"Daily summary archive created at: {daily_archive}")
 
-        # 4. Clean up processed .tar.gz file from input_folder (optional).
+        # 3. Optionally remove the original tar file, or all extracted CSVs:
         # os.remove(tar_file_path)
+        # logging.info(f"Deleted processed .tar.gz file: {tar_file_path}")
+
+        # Or cleanup the entire input folder if you want to remove extracted data:
         cleanup_directory(input_folder)
-        logging.info(f"Deleted processed .tar.gz file: {tar_file_path}")
+        logging.info(f"Cleaned up extracted data in: {input_folder}")
