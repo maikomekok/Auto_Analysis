@@ -2,20 +2,21 @@ import os
 import sys
 import getopt
 from datetime import datetime
-from data_quality_checking import process_daily_data  # Changed from run_quality_checks
+from data_quality_checking import process_daily_data
+from analyze_exchanges import analyze
+
 
 def main(input_path, summary_path, mode):
-    # Ensure the summary directory exists
     os.makedirs(summary_path, exist_ok=True)
 
-    # Create daily output folder
     daily_folder = os.path.join(summary_path, datetime.now().strftime('%Y-%m-%d'))
     os.makedirs(daily_folder, exist_ok=True)
 
-    # Execute based on the selected mode
     if mode == "quality_check":
         print(f"Running Data Quality Check on data in {input_path}...")
-        process_daily_data(input_path, daily_folder)  # Updated function call
+        process_daily_data(input_path, daily_folder)
+    elif mode == "analyze_exchanges":
+        analyze(db_path=".")
     else:
         print(f"Unknown mode: {mode}. Use --help for usage instructions.")
 
@@ -31,9 +32,9 @@ def print_help():
     """)
 
 if __name__ == '__main__':
-    input_path = '.'  # Default input path
-    summary_path = './summaries'  # Default summary path
-    mode = 'quality_check'  # Default mode
+    input_path = '.'
+    summary_path = './summaries'
+    mode = 'quality_check'
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], "i:s:m:h", ["input=", "summary=", "mode=", "help"])

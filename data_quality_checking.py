@@ -48,7 +48,6 @@ def is_valid_price(price,
         logging.debug(f"Invalid price due to exceeding MAX_VALID_PRICE: {price_float}")
         return False
 
-    # Optional checks against last_valid_price
     if last_valid_price is not None and last_valid_price > 0:
         rel_change = abs(price_float - last_valid_price) / last_valid_price
         if rel_change > relative_threshold:
@@ -93,20 +92,16 @@ def custom_btc_outlier_detection(data, price_cols, volume_cols,
             current_price = prices.iloc[i]
             current_volume = volumes.iloc[i]
 
-            # Skip NaN prices
             if pd.isna(current_price):
                 continue
 
-            # If both price and volume are zero => skip (assume no data)
             if (current_price == 0) and (current_volume == 0):
                 continue
 
-            # If price=0 but volume!=0 => outlier
             if (current_price == 0) and (current_volume != 0):
                 outlier_indices.append(i)
                 continue
 
-            # Check the price validity
             if not is_valid_price(
                     current_price,
                     last_valid_price,
@@ -116,7 +111,6 @@ def custom_btc_outlier_detection(data, price_cols, volume_cols,
                 outlier_indices.append(i)
                 continue
 
-            # Update last_valid_price if everything is valid
             last_valid_price = current_price
 
         if outlier_indices:
@@ -246,7 +240,7 @@ def split_and_tar_summary(summary_df,
     """
     output_dir = os.path.dirname(tar_file_name)
     if not output_dir:
-        output_dir = '.'  # if tar_file_name has no path, use current dir
+        output_dir = '.'
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -256,7 +250,7 @@ def split_and_tar_summary(summary_df,
     total_rows = len(summary_df)
     logging.info(f"Preparing to split {total_rows} rows into chunks of {rows_per_file}.")
 
-    # Write chunked CSV files
+
     part_number = 0
     for start_idx in range(0, total_rows, rows_per_file):
         end_idx = start_idx + rows_per_file
@@ -266,14 +260,12 @@ def split_and_tar_summary(summary_df,
         chunk.to_csv(chunk_file, index=False)
         logging.info(f"Created chunk file: {chunk_file}")
 
-    # Tar all chunk files
     with tarfile.open(tar_file_name, 'w:gz') as tar:
         for file in os.listdir(temp_summary_dir):
             file_path = os.path.join(temp_summary_dir, file)
             tar.add(file_path, arcname=file)
             logging.info(f"Added {file} to archive {tar_file_name}")
 
-    # Clean up the temporary chunk files
     cleanup_directory(temp_summary_dir)
     logging.info(f"Summary archive created at: {tar_file_name}")
 
@@ -298,7 +290,6 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
         logging.warning(f"No CSV files found in {directory_path}. Skipping...")
         return
 
-    # Pick a date (from the first CSV) to name output folders
     first_date = extract_date_from_filename(os.path.basename(csv_files[0]))
 
     summary_data = []
@@ -312,23 +303,17 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
 
         try:
             data = pd.read_csv(csv_file)
-            # Standardize column names
             data.columns = data.columns.str.strip().str.lower()
-            # Forward fill to handle missing data
             data.fillna(method='ffill', inplace=True)
 
-            # 1. Check duplicates
             duplicates_count, duplicates_indices = check_duplicates(data)
 
-            # 2. Zero entries
             zero_count, zero_details = detect_zero_entries_multiple(data, all_price_cols, all_volume_cols)
 
-            # 3. Custom outlier detection
             custom_outliers = custom_btc_outlier_detection(data, all_price_cols, all_volume_cols)
             total_outliers = sum(len(indices) for indices in custom_outliers.values())
 
-            # 4. Time-based outliers
-            # We'll check for 'timestamp', 'date', or 'time' columns in that order.
+
             time_outliers_count = 0
             time_outliers_indices = []
             average_time_diff = None
@@ -342,7 +327,6 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
                      average_time_diff) = detect_time_based_outliers(data, ts_col)
                     break
 
-            # Sum up total issues
             total_issues = (
                     duplicates_count
                     + zero_count
@@ -353,9 +337,7 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
             exchange_code = identify_exchange_code(csv_file)
             logging.info(f"Identified exchange code for {csv_file}: {exchange_code}")
 
-            # If you want to include ONLY files with issues OR truly empty files, do:
-            #   if (len(data) == 0) or (total_issues != 0):
-            # Otherwise, if you want to log everything, remove this condition
+
             if total_issues != 0 or len(data) == 0:
                 summary_entry = {
                     'file': csv_file,
@@ -375,7 +357,6 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
                 summary_data.append(summary_entry)
 
         except pd.errors.EmptyDataError:
-            # Means the CSV is truly empty (no headers, etc.)
             logging.warning(f"Empty file detected: {csv_file}")
             exchange_code = identify_exchange_code(csv_file)
             summary_data.append({
@@ -397,7 +378,6 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
         except Exception as e:
             logging.error(f"Error processing file {csv_file}: {e}")
 
-    # After processing ALL CSVs, group and create archives if there's anything in summary_data
     if summary_data:
         summary_df = pd.DataFrame(summary_data)
         grouped = summary_df.groupby('exchange_code')
@@ -440,10 +420,8 @@ def process_daily_data(input_folder, output_folder):
         tar_file_path = os.path.join(input_folder, tar_file)
         logging.info(f"Processing archive: {tar_file_path}")
 
-        # 1. Extract tar.gz
         extract_tar_gz(tar_file_path, input_folder)
 
-        # 2. lolll,,,, Run quality checks (creates tar.gz summary per exchange_code)
         run_quality_checks(input_folder, output_folder)
 
         # date_str = extract_date_from_filename(tar_file)
