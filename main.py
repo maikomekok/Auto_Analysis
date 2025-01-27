@@ -1,16 +1,13 @@
-# main.py
-
 import os
 import sys
 import argparse
 from datetime import datetime
 from data_quality_checking import process_daily_data
-from analyze_exchanges import analyze  # Ensure analyze_exchanges.py is in the same directory or PYTHONPATH
+from analyze_exchanges import analyze
 import logging
 
 def main(input_path, summary_path, mode, db_path):
     os.makedirs(summary_path, exist_ok=True)
-
     daily_folder = os.path.join(summary_path, datetime.now().strftime('%Y-%m-%d'))
     os.makedirs(daily_folder, exist_ok=True)
 
@@ -22,9 +19,7 @@ def main(input_path, summary_path, mode, db_path):
             print("Error: --db is required when mode is 'analyze_exchanges'. Use --help for usage instructions.")
             sys.exit(1)
         print(f"Running Exchange Analysis...")
-        # Define a temporary extraction directory within the summary path
         temp_extract_dir = os.path.join(summary_path, 'temp_extracted')
-        # Call the analyze function from analyze_exchanges.py
         analyze(exchange_dir=input_path, temp_extract_dir=temp_extract_dir, db_path=db_path)
     else:
         print(f"Unknown mode: {mode}. Use --help for usage instructions.")
