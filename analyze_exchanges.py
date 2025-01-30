@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 
 import os
 import sys
@@ -119,8 +118,8 @@ def summarize_csv(csv_path):
     try:
         df = pd.read_csv(csv_path)
         # Replace with actual column names from your CSV
-        total_outliers = df['outlier_count'].sum()
-        average_time_outliers = df['outlier_time'].mean()
+        total_outliers = df['custom_price_outliers'].sum()
+        average_time_outliers = df['avg_time_diff_ms'].mean()
         return total_outliers, average_time_outliers
     except Exception as e:
         logging.error(f"Failed to summarize CSV '{csv_path}': {e}")
