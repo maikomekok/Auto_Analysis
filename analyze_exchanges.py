@@ -118,13 +118,13 @@ def summarize_csv(csv_path):
     try:
         df = pd.read_csv(csv_path)
         # Verify required columns exist
-        required_columns = ['outlier_count', 'outlier_time']
+        required_columns = ['custom_price_outliers', 'avg_time_diff_ms']
         for column in required_columns:
             if column not in df.columns:
                 raise KeyError(f"Missing required column: '{column}'")
 
-        total_outliers = int(df['outlier_count'].sum())
-        average_time_outliers = float(df['outlier_time'].mean())
+        total_outliers = int(df['custom_price_outliers'].sum())
+        average_time_outliers = float(df['avg_time_diff_ms'].mean())
 
         return total_outliers, average_time_outliers
     except KeyError as e:
