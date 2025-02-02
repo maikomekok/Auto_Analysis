@@ -11,7 +11,6 @@ import pandas as pd
 from tqdm import tqdm
 import logging
 
-# Setup logging to both console and file
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -231,7 +230,7 @@ def main():
     input_dir = args.input
     db_path = args.db
 
-    # Validate input directory
+
     if not os.path.isdir(input_dir):
         logging.error(f"Input directory '{input_dir}' does not exist.")
         sys.exit(1)
