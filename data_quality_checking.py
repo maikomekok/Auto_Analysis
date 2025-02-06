@@ -424,20 +424,7 @@ def process_daily_data(input_folder, output_folder):
 
         run_quality_checks(input_folder, output_folder)
 
-        # date_str = extract_date_from_filename(tar_file)
-        # daily_archive = os.path.join(output_folder, f'{date_str}_summary.tar.gz')
-        # with tarfile.open(daily_archive, 'w:gz') as tar:
-        #     for root, dirs, files in os.walk(output_folder):
-        #         for file_ in files:
-        #             file_path = os.path.join(root, file_)
-        #             if file_path == daily_archive:
-        #                 continue
-        #             tar.add(file_path, arcname=file_)
-        # logging.info(f"Daily summary archive created at: {daily_archive}")
 
-        # 3. Optionally remove the original tar file, or all extracted CSVs:
-        # os.remove(tar_file_path)
-        # logging.info(f"Deleted processed .tar.gz file: {tar_file_path}")
 
         # Or cleanup the entire input folder if you want to remove extracted data:
         cleanup_directory(input_folder)
