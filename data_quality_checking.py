@@ -405,10 +405,8 @@ def run_quality_checks(directory_path, output_path, rows_per_file=1000):
 
 def process_daily_data(input_folder, output_folder):
     """
-    High-level workflow:
       1. Find .tar.gz files in 'input_folder'.
       2. Extract each archive, then run quality checks on the extracted CSVs.
-      3. (Optionally) create a daily summary archive from 'output_folder' contents.
       4. Clean up the extracted .tar.gz or input folder if needed.
     """
     tar_files = [f for f in os.listdir(input_folder) if f.endswith('.tar.gz')]
